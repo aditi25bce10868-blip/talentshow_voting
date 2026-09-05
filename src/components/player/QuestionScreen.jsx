@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { submitAnswer } from '../../firebase/db';
 
-const PERFORMANCE_TYPES = ['Solo', 'Duet', 'Group', 'Band', 'Dance', 'Other'];
-
 const RATINGS = [
   { value: 1, label: '1 STAR' },
   { value: 2, label: '2 STARS' },
@@ -12,21 +10,17 @@ const RATINGS = [
   { value: 5, label: '5 STARS' },
 ];
 
-export default function QuestionScreen({ question, playerId, questionStartTime, questionIndex, totalQuestions }) {
+export default function QuestionScreen({ question, playerId, questionStartTime }) {
   const totalTime    = question.timer ?? 15;
   const [timeLeft,   setTimeLeft]   = useState(totalTime);
-  const [teamName,   setTeamName]   = useState('');
-  const [perfType,   setPerfType]   = useState('');
   const [selected,   setSelected]   = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [expired,    setExpired]    = useState(false);
   const expiredRef   = useRef(false);
 
-  // Reset on new question
+  // Reset on new performance
   useEffect(() => {
     setTimeLeft(totalTime);
-    setTeamName('');
-    setPerfType('');
     setSelected(null);
     setExpired(false);
     expiredRef.current = false;
@@ -53,38 +47,35 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
     return () => clearInterval(id);
   }, [question.id, questionStartTime, totalTime]);
 
-  const canRate = teamName.trim().length > 0 && perfType.length > 0;
+  const canRate = !expired && selected === null;
 
+  // Team + type come from the admin-set question doc (QuestionEditor),
+  // never from the audience — a rating round is always about whichever
+  // performance the host has live right now. Tapping a rating submits
+  // and locks it immediately; server-side, firestore.rules denies any
+  // further write to this answer doc, so this is a real lock, not just
+  // a disabled button.
   const handleSelect = useCallback(async (value) => {
-    if (submitting || expired || !canRate || selected === value) return;
+    if (submitting || expired || selected !== null) return;
     setSelected(value);
     setSubmitting(true);
 
-    const startMs =
-      questionStartTime?.toMillis?.() ??
-      (questionStartTime?.seconds ?? 0) * 1000;
-    const timeTaken = Math.max(0, (Date.now() - startMs) / 1000);
-
     try {
       await submitAnswer({
-        questionId:      question.id,
+        questionId: question.id,
         playerId,
-        answer:          value,
-        teamName:        teamName.trim(),
-        performanceType: perfType,
-        timeTaken,
-        timer:            totalTime,
+        rating: value,
       });
     } catch (e) {
       // Log only — never show technical errors to the player. Their
       // selection stays visible so the UI never "snaps back" on them.
-      // submitAnswer has its own two-attempt retry, so reaching here
-      // means a deeper problem (rules, network) — admin debugs via console.
+      // A rejected write here almost always just means the round ended
+      // a beat before this landed — not something to alarm them with.
       console.error('submitAnswer failed:', e);
     } finally {
       setSubmitting(false);
     }
-  }, [submitting, expired, canRate, selected, question, playerId, questionStartTime, totalTime, teamName, perfType]);
+  }, [submitting, expired, selected, question, playerId]);
 
   const pct      = timeLeft / totalTime;
   const barColor = pct > 0.5 ? '#f97316' : pct > 0.25 ? '#f59e0b' : '#ef4444';
@@ -188,72 +179,37 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
           </motion.div>
         </div>
 
-        {/* Team name */}
-        <div>
-          <label className="block text-sm font-bold text-orange-400 mb-2 uppercase tracking-wider">
-            Team Name
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              disabled={expired}
-              placeholder="Team name"
-              maxLength={40}
-              className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3.5 pr-11 text-white
-                         placeholder-white/30 text-lg font-medium focus:outline-none
-                         focus:border-orange-400 focus:bg-black/70 transition-all duration-300
-                         disabled:opacity-50"
-            />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
-                <circle cx="9" cy="8" r="3" />
-                <path d="M2.5 19c0-3 3-5.5 6.5-5.5S15.5 16 15.5 19" />
-                <path d="M16 8.5a2.6 2.6 0 110 5" />
-                <path d="M18 13.8c2 .4 3.5 2.2 3.5 4.2" />
-              </svg>
-            </span>
-          </div>
-        </div>
+        {/* Who you're rating — set by the host, read-only for the audience */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center rounded-2xl border border-orange-500/20 bg-white/[0.02] px-5 py-5"
+        >
+          <p className="text-4xl font-black text-white leading-tight drop-shadow-[0_0_16px_rgba(249,115,22,0.25)]">
+            {question.teamName}
+          </p>
+          {question.teamType && (
+            <p className="text-orange-300 text-sm font-bold uppercase tracking-wider mt-1.5">
+              {question.teamType}
+            </p>
+          )}
 
-        {/* Performance type */}
-        <div>
-          <label className="block text-sm font-bold text-orange-400 mb-2 uppercase tracking-wider">
-            Performance Type
-          </label>
-          <div className="relative">
-            <select
-              value={perfType}
-              onChange={(e) => setPerfType(e.target.value)}
-              disabled={expired}
-              className="w-full appearance-none bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3.5 pr-11
-                         text-lg font-medium focus:outline-none focus:border-orange-400 focus:bg-black/70
-                         transition-all duration-300 disabled:opacity-50"
-              style={{ color: perfType ? '#fff' : 'rgba(255,255,255,0.3)' }}
-            >
-              <option value="" disabled className="text-white/50">
-                Performance type
-              </option>
-              {PERFORMANCE_TYPES.map((t) => (
-                <option key={t} value={t} className="text-white bg-[#1a1a1a]">
-                  {t}
-                </option>
-              ))}
-            </select>
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </span>
+          <div className="flex items-center justify-center gap-3 mt-4 mb-2">
+            <span className="h-px w-8 bg-gradient-to-r from-transparent to-orange-500/50" />
+            <span className="text-xs text-orange-400/70 tracking-widest">•</span>
+            <span className="h-px w-8 bg-gradient-to-l from-transparent to-orange-500/50" />
           </div>
-        </div>
+
+          <p className="text-white/60 text-sm font-medium">
+            How would you like to rate this performance?
+          </p>
+        </motion.div>
 
         {/* Star rating rows */}
         <div className="flex flex-col gap-3 flex-1">
           {RATINGS.map((r, idx) => {
             const isChosen = selected === r.value;
-            const disabled = expired || submitting || !canRate;
+            const disabled = expired || submitting || selected !== null;
 
             return (
               <motion.button
@@ -263,7 +219,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
                 disabled={disabled}
                 whileTap={!disabled ? { scale: 0.98 } : {}}
                 initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: !canRate && !expired ? 0.5 : 1, x: 0 }}
+                animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: idx * 0.06 }}
                 className={`
                   relative flex items-center gap-3 px-4 py-3.5 rounded-xl border
