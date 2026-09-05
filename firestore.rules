@@ -21,7 +21,7 @@ service cloud.firestore {
           && d.playerId is string
           && answerId == d.questionId + '_' + d.playerId
           && d.answer is int
-          && d.answer >= 0 && d.answer <= 3
+          && d.answer >= 0 && d.answer <= 5
           && d.timeTaken is number
           && d.timeTaken >= 0
           && d.timer is number

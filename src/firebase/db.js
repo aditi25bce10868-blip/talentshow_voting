@@ -353,12 +353,20 @@ export const submitAnswer = async ({
   questionId,
   playerId,
   answer,
+  teamName,
+  performanceType,
   timeTaken,
   timer = 15,
 }) => {
   const answerRef = doc(db, 'answers', `${questionId}_${playerId}`);
   await setDoc(answerRef, {
-    questionId, playerId, answer, timeTaken, timer,
+    questionId,
+    playerId,
+    answer: Number(answer),
+    teamName: teamName || '',
+    performanceType: performanceType || '',
+    timeTaken,
+    timer,
     timestamp: serverTimestamp(),
   });
 };
@@ -380,6 +388,12 @@ export const subscribeToQuestionAnswers = (questionId, cb) =>
     (snap) => cb(snap.docs.map((d) => d.data()))
   );
 
+/** Stream all answers across all questions/performances in real-time */
+export const subscribeToAllAnswers = (cb) =>
+  onSnapshot(answersCol(), (snap) =>
+    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  );
+
 // ─── Rank helper (handles ties) ───────────────────────────────
 /**
  * Returns the 1-based rank of `playerId` in a sorted player list.
@@ -396,16 +410,18 @@ export const getPlayerRank = (players, playerId) => {
  * Transaction-guarded: only saves once even with multiple host tabs open.
  */
 export const saveSession = async (gameState) => {
-  const [playerSnap, answerSnap, keySnap] = await Promise.all([
+  const [playerSnap, answerSnap, keySnap, questionSnap] = await Promise.all([
     getDocs(playersCol()),
     getDocs(answersCol()),
     getDocs(answerKeysCol()),
+    getDocs(query(questionsCol(), orderBy('order', 'asc'))),
   ]);
   const keyMap = {};
   keySnap.docs.forEach((d) => { keyMap[d.id] = d.data().correctAnswer; });
   const scoreMap = {};
-  answerSnap.docs.forEach((d) => {
-    const { playerId, questionId, answer, timeTaken, timer = 15 } = d.data();
+  const answers = answerSnap.docs.map((d) => d.data());
+
+  answers.forEach(({ playerId, questionId, answer, timeTaken, timer = 15 }) => {
     if (!(questionId in keyMap)) return;
     const isCorrect = answer === keyMap[questionId];
     scoreMap[playerId] = (scoreMap[playerId] || 0) + calcScore(isCorrect, timeTaken, timer);
@@ -419,15 +435,86 @@ export const saveSession = async (gameState) => {
     rank:  players.filter((x) => x.score > p.score).length + 1,
   }));
 
+  // Tally performance voting results
+  const questions = questionSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const performanceMap = {};
+
+  // Initialize from questions
+  questions.forEach((q, idx) => {
+    performanceMap[q.id] = {
+      id: q.id,
+      order: q.order ?? idx,
+      teamName: q.text || `Performance ${idx + 1}`,
+      performanceType: 'Performance',
+      votes5: 0,
+      votes4: 0,
+      votes3: 0,
+      votes2: 0,
+      votes1: 0,
+      totalVotes: 0,
+      totalRating: 0,
+      averageRating: '0.00',
+    };
+  });
+
+  // Aggregate answers
+  answers.forEach((a) => {
+    const qId = a.questionId;
+    if (!performanceMap[qId]) {
+      performanceMap[qId] = {
+        id: qId,
+        order: 999,
+        teamName: a.teamName || 'Performance',
+        performanceType: a.performanceType || 'Performance',
+        votes5: 0,
+        votes4: 0,
+        votes3: 0,
+        votes2: 0,
+        votes1: 0,
+        totalVotes: 0,
+        totalRating: 0,
+        averageRating: '0.00',
+      };
+    }
+    const item = performanceMap[qId];
+    if (a.teamName) item.teamName = a.teamName;
+    if (a.performanceType) item.performanceType = a.performanceType;
+    const val = Number(a.answer);
+    if (val === 5) item.votes5 += 1;
+    else if (val === 4) item.votes4 += 1;
+    else if (val === 3) item.votes3 += 1;
+    else if (val === 2) item.votes2 += 1;
+    else if (val === 1) item.votes1 += 1;
+  });
+
+  const performances = Object.values(performanceMap).map((p) => {
+    const totalVotes = p.votes5 + p.votes4 + p.votes3 + p.votes2 + p.votes1;
+    const totalRating = (5 * p.votes5) + (4 * p.votes4) + (3 * p.votes3) + (2 * p.votes2) + (1 * p.votes1);
+    const averageRating = totalVotes > 0 ? (totalRating / totalVotes).toFixed(2) : '0.00';
+    return {
+      ...p,
+      totalVotes,
+      totalRating,
+      averageRating,
+    };
+  }).sort((a, b) => {
+    if (b.totalRating !== a.totalRating) return b.totalRating - a.totalRating;
+    return b.totalVotes - a.totalVotes;
+  }).map((p, idx, arr) => ({
+    ...p,
+    rank: arr.filter((x) => x.totalRating > p.totalRating).length + 1,
+  }));
+
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(gameRef);
     if (!snap.exists() || snap.data().sessionSaved) return;
     const sessionRef = doc(sessionsCol());
     tx.set(sessionRef, {
-      title:     gameState.title ?? 'QuizLive',
-      startedAt: gameState.startedAt ?? null,
-      endedAt:   serverTimestamp(),
-      players:   ranked,
+      title:        gameState.title ?? 'QuizLive',
+      startedAt:    gameState.startedAt ?? null,
+      endedAt:      serverTimestamp(),
+      players:      ranked,
+      performances: performances,
     });
     tx.update(gameRef, { sessionSaved: true });
   });
