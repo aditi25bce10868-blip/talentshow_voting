@@ -1,25 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import Timer from '../shared/Timer';
 import { subscribeToQuestionAnswers } from '../../firebase/db';
 
-const OPTION_STYLES = [
-  { bg: 'bg-violet-600/80',  border: 'border-violet-400', label: 'A', icon: '▲' },
-  { bg: 'bg-blue-600/80',    border: 'border-blue-400',   label: 'B', icon: '◆' },
-  { bg: 'bg-rose-600/80',    border: 'border-rose-400',   label: 'C', icon: '●' },
-  { bg: 'bg-amber-500/80',   border: 'border-amber-400',  label: 'D', icon: '■' },
-];
+export default function QuestionPhase({ question }) {
+  const [answerCount, setAnswerCount] = useState(0);
 
-export default function QuestionPhase({
-  question,
-  gameState,
-  questionIndex,
-  totalQuestions,
-}) {
-  const [timeLeft,     setTimeLeft]     = useState(question.timer ?? 15);
-  const [answerCount,  setAnswerCount]  = useState(0);
-
-  // Live answer counter
+  // Live vote counter
   useEffect(() => {
     const unsub = subscribeToQuestionAnswers(question.id, (answers) => {
       setAnswerCount(answers.length);
@@ -27,37 +13,16 @@ export default function QuestionPhase({
     return unsub;
   }, [question.id]);
 
-  // Countdown from Firestore timestamp
-  useEffect(() => {
-    if (!gameState?.questionStartTime) return;
-    setTimeLeft(question.timer ?? 15);
-
-    const startMs =
-      gameState.questionStartTime?.toMillis?.() ??
-      (gameState.questionStartTime?.seconds ?? 0) * 1000;
-
-    const tick = () => {
-      const elapsed   = (Date.now() - startMs) / 1000;
-      const remaining = Math.max(0, (question.timer ?? 15) - elapsed);
-      setTimeLeft(remaining);
-    };
-
-    tick();
-    const id = setInterval(tick, 100);
-    return () => clearInterval(id);
-  }, [question.id, gameState?.questionStartTime, question.timer]);
-
   return (
     <div className="min-h-screen w-full flex flex-col p-8 bg-gradient-to-br from-[#0f0a1e] via-[#1a0a2e] to-[#0a1628]">
-      {/* Top bar */}
+      {/* Top bar — no countdown here; the timer is audience-only, shown on their phones */}
       <div className="flex items-center justify-between mb-6">
-        <div className="glass rounded-xl px-4 py-2">
-          <span className="text-brand-300 text-sm font-semibold">
-            Question {questionIndex + 1} / {totalQuestions}
-          </span>
+        <div className="glass rounded-xl px-4 py-2 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-brand-300 text-sm font-semibold">Voting Open</span>
         </div>
 
-        {/* Answer count */}
+        {/* Vote count */}
         <motion.div
           key={answerCount}
           initial={{ scale: 1.2 }}
@@ -65,44 +30,28 @@ export default function QuestionPhase({
           className="glass rounded-xl px-4 py-2 flex items-center gap-2"
         >
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-white text-sm font-semibold">{answerCount} answered</span>
+          <span className="text-white text-sm font-semibold">{answerCount} voted</span>
         </motion.div>
-
-        {/* Timer */}
-        <Timer timeLeft={timeLeft} totalTime={question.timer ?? 15} size={110} />
       </div>
 
-      {/* Question text */}
+      {/* Team on stage */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-strong rounded-3xl p-8 mb-8 flex items-center justify-center flex-1 max-h-48"
+        className="glass-strong rounded-3xl p-10 flex flex-col items-center justify-center flex-1 gap-3"
       >
-        <h2 className="text-4xl font-black text-white text-center leading-tight">
-          {question.text}
+        <p className="text-brand-300 text-lg font-bold uppercase tracking-widest">Now Performing</p>
+        <h2 className="text-6xl font-black text-white text-center leading-tight">
+          {question.teamName}
         </h2>
+        {question.teamType && (
+          <p className="text-white/50 text-2xl font-semibold">{question.teamType}</p>
+        )}
+        <div className="flex gap-2 text-4xl mt-4">
+          <span>⭐⭐⭐⭐⭐</span>
+        </div>
+        <p className="text-white/30 text-sm mt-1">Audience is rating on their phones now</p>
       </motion.div>
-
-      {/* Options — horizontal rows */}
-      <div className="flex flex-col gap-3">
-        {question.options.map((opt, idx) => {
-          const s = OPTION_STYLES[idx];
-          return (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.08 }}
-              className={`${s.bg} border-2 ${s.border} rounded-2xl px-6 py-4 flex items-center gap-5`}
-            >
-              <span className="text-white/60 text-2xl font-black w-8 shrink-0 text-center">
-                {s.label}
-              </span>
-              <span className="text-white text-xl font-bold leading-snug">{opt}</span>
-            </motion.div>
-          );
-        })}
-      </div>
     </div>
   );
 }
