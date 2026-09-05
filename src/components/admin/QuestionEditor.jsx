@@ -2,43 +2,32 @@ import { useState, useRef } from 'react';
 import { addQuestion, updateQuestion, deleteQuestion, reorderQuestions } from '../../firebase/db';
 
 const BLANK = {
-  text:          '',
-  options:       ['', '', '', ''],
-  correctAnswer: 0,
-  timer:         15,
+  teamName: '',
+  teamType: '',
+  timer:    15,
 };
 
 function QuestionForm({ initial = BLANK, onSave, onCancel, saving }) {
   const [q, setQ] = useState({ ...BLANK, ...initial });
-  const optionRefs = useRef([]);
-
-  const setOption = (i, val) => {
-    const opts = [...q.options];
-    opts[i] = val;
-    setQ({ ...q, options: opts });
-  };
+  const typeRef = useRef(null);
 
   const valid =
-    q.text.trim() &&
-    q.options.every((o) => o.trim()) &&
+    q.teamName.trim() &&
+    q.teamType.trim() &&
     q.timer >= 5 &&
     q.timer <= 120;
 
-  // Enter on the question textarea (no Shift) → jump to option A.
-  const handleTextKeyDown = (e) => {
+  // Enter on team name → jump to team type.
+  const handleNameKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      optionRefs.current[0]?.focus();
+      typeRef.current?.focus();
     }
   };
 
-  // Enter on option N → N<3 jump to N+1; N===3 save (if valid).
-  const handleOptionKeyDown = (i) => (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    if (i < q.options.length - 1) {
-      optionRefs.current[i + 1]?.focus();
-    } else if (valid && !saving) {
+  const handleTypeKeyDown = (e) => {
+    if (e.key === 'Enter' && valid && !saving) {
+      e.preventDefault();
       onSave(q);
     }
   };
@@ -46,56 +35,55 @@ function QuestionForm({ initial = BLANK, onSave, onCancel, saving }) {
   return (
     <div className="glass-strong rounded-2xl p-5 space-y-4">
       <div>
-        <label className="label">Question Text</label>
-        <textarea
-          value={q.text}
-          onChange={(e) => setQ({ ...q, text: e.target.value })}
-          onKeyDown={handleTextKeyDown}
-          rows={2}
-          placeholder="What is the capital of France? (Enter → next field, Shift+Enter → new line)"
-          className="input resize-none"
+        <label className="label">Team Name</label>
+        <input
+          type="text"
+          value={q.teamName}
+          onChange={(e) => setQ({ ...q, teamName: e.target.value })}
+          onKeyDown={handleNameKeyDown}
+          placeholder="e.g. The Rising Stars"
+          className="input"
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {q.options.map((opt, i) => (
-          <div key={i}>
-            <label className="label">
-              Option {String.fromCharCode(65 + i)}
-              {i === q.correctAnswer && (
-                <span className="ml-2 text-green-400 text-xs font-bold">✓ Correct</span>
-              )}
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                ref={(el) => (optionRefs.current[i] = el)}
-                value={opt}
-                onChange={(e) => setOption(i, e.target.value)}
-                onKeyDown={handleOptionKeyDown(i)}
-                placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                className="input flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => setQ({ ...q, correctAnswer: i })}
-                title="Mark as correct"
-                className={`px-3 rounded-xl border transition-all font-bold text-sm
-                  ${i === q.correctAnswer
-                    ? 'bg-green-500/30 border-green-500 text-green-300'
-                    : 'bg-white/5 border-white/20 text-white/40 hover:border-green-500/50'
-                  }`}
-              >
-                ✓
-              </button>
+      <div>
+        <label className="label">Team Type</label>
+        <input
+          type="text"
+          ref={typeRef}
+          value={q.teamType}
+          onChange={(e) => setQ({ ...q, teamType: e.target.value })}
+          onKeyDown={handleTypeKeyDown}
+          placeholder="e.g. Dance, Singing, Comedy"
+          className="input"
+        />
+      </div>
+
+      <div className="glass rounded-xl p-3 space-y-2.5">
+        <p className="text-white/40 text-xs">
+          Audience always rates 1–5 stars — no options to configure.
+        </p>
+        <div className="grid grid-cols-5 gap-1.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <div
+              key={n}
+              className="flex flex-col items-center justify-center gap-1 rounded-lg
+                         bg-black/40 border border-orange-500/20 py-2"
+            >
+              <span className="text-[9px] font-bold text-white/30 uppercase tracking-wider">
+                Option {n}
+              </span>
+              <span className="text-amber-400 text-xs leading-none tracking-tight">
+                {'★'.repeat(n)}
+              </span>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       <div className="flex items-end gap-4">
         <div>
-          <label className="label">Timer (seconds)</label>
+          <label className="label">Voting Timer (seconds)</label>
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -133,7 +121,7 @@ function QuestionForm({ initial = BLANK, onSave, onCancel, saving }) {
           disabled={!valid || saving}
           className="btn-primary"
         >
-          {saving ? 'Saving…' : 'Save Question'}
+          {saving ? 'Saving…' : 'Save Performance'}
         </button>
         <button onClick={onCancel} className="btn-ghost">Cancel</button>
       </div>
@@ -156,8 +144,8 @@ export default function QuestionEditor({ questions }) {
       else                   await updateQuestion(editing, q);
       setEditing(null);
     } catch (err) {
-      console.error('Save question failed:', err);
-      alert(`Couldn't save question: ${err.message ?? err}`);
+      console.error('Save performance failed:', err);
+      alert(`Couldn't save performance: ${err.message ?? err}`);
     } finally { setSaving(false); }
   };
 
@@ -176,8 +164,8 @@ export default function QuestionEditor({ questions }) {
     try {
       await deleteQuestion(id);
     } catch (err) {
-      console.error('Delete question failed:', err);
-      alert(`Couldn't delete question: ${err.code || err.message || err}`);
+      console.error('Delete performance failed:', err);
+      alert(`Couldn't delete performance: ${err.code || err.message || err}`);
     } finally {
       setDeleting(null);
     }
@@ -207,7 +195,7 @@ export default function QuestionEditor({ questions }) {
                      text-brand-400 font-semibold hover:border-brand-400 hover:text-brand-300
                      transition-all flex items-center justify-center gap-2"
         >
-          + Add Question
+          + Add Performance
         </button>
       )}
 
@@ -220,7 +208,7 @@ export default function QuestionEditor({ questions }) {
       )}
 
       {questions.length === 0 && (
-        <p className="text-center text-white/30 py-8">No questions yet. Add one above.</p>
+        <p className="text-center text-white/30 py-8">No performances yet. Add one above.</p>
       )}
 
       {questions.length > 1 && (
@@ -259,22 +247,9 @@ export default function QuestionEditor({ questions }) {
                 </span>
 
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-semibold text-sm">{q.text}</p>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {q.options.map((opt, i) => (
-                      <span
-                        key={i}
-                        className={`text-xs px-2 py-0.5 rounded-lg font-medium
-                          ${i === q.correctAnswer
-                            ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                            : 'bg-white/10 text-white/50'
-                          }`}
-                      >
-                        {String.fromCharCode(65 + i)}: {opt}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="text-white/30 text-xs mt-1.5">⏱ {q.timer ?? 15}s · max 30 pts</p>
+                  <p className="text-white font-semibold text-sm">{q.teamName}</p>
+                  <p className="text-white/40 text-xs mt-0.5">{q.teamType}</p>
+                  <p className="text-white/30 text-xs mt-1.5">⏱ {q.timer ?? 15}s · rated 1–5 ⭐</p>
                 </div>
 
                 <div className="flex gap-2 shrink-0">
