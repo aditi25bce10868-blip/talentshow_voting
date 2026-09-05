@@ -5,11 +5,9 @@ import { auth } from '../firebase/config';
 import useGameState    from '../hooks/useGameState';
 import {
   subscribeToQuestions,
-  subscribeToAnswerKeys,
   subscribeToPlayers,
+  subscribeToQuestionAnswers,
   saveSession,
-  advanceToResults,
-  migrateAnswerKeys,
 } from '../firebase/db';
 import LoginScreen     from '../components/admin/LoginScreen';
 import QuestionEditor  from '../components/admin/QuestionEditor';
@@ -20,8 +18,8 @@ import LoadingSpinner  from '../components/shared/LoadingSpinner';
 import ErrorScreen     from '../components/shared/ErrorScreen';
 
 const TABS = [
-  { id: 'questions', label: '📝 Questions' },
-  { id: 'game',      label: '🎮 Game Control' },
+  { id: 'questions', label: '📝 Performances' },
+  { id: 'game',      label: '🎮 Vote Control' },
   { id: 'host',      label: '🖥 Host / QR' },
   { id: 'history',   label: '📋 History' },
 ];
@@ -51,12 +49,10 @@ export default function AdminPage() {
   const [authLoading, setAuthLoading] = useState(true);
   const [tab,         setTab]         = useState('game');
   const [questions,   setQuestions]   = useState([]);
-  const [answerKeys,  setAnswerKeys]  = useState({});
   const [players,     setPlayers]     = useState([]);
-  const [migration,   setMigration]   = useState(null); // {count} | {error}
+  const [votedCount,  setVotedCount]  = useState(0);
   const { gameState, loading, error } = useGameState();
   const sessionSaving                 = useRef(false);
-  const advanceTimerRef               = useRef(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -68,65 +64,41 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!authed) return;
-    // Self-healing migration: ensures every question has an answerKey.
-    // Only surfaces success (banner). Failures go to console — they only
-    // matter if there's legacy data, and a clean install has nothing to migrate.
-    migrateAnswerKeys()
-      .then((count) => { if (count > 0) setMigration({ count }); })
-      .catch((err) => console.error('migrateAnswerKeys:', err));
     const u1 = subscribeToQuestions(setQuestions);
     const u2 = subscribeToPlayers(setPlayers);
-    const u3 = subscribeToAnswerKeys(setAnswerKeys);
-    return () => { u1(); u2(); u3(); };
+    return () => { u1(); u2(); };
   }, [authed]);
 
-  // Merge correctAnswer back in for admin UI (editor needs to display + edit it).
-  const enrichedQuestions = questions.map((q) => ({
-    ...q,
-    correctAnswer: answerKeys[q.id] ?? 0,
-  }));
+  // Live "voted" count for the current performance — drives the
+  // voted/left badge in the header next to Logout.
+  useEffect(() => {
+    if (!authed) { setVotedCount(0); return; }
+    const currentQ = questions[gameState?.currentQuestionIndex ?? 0];
+    if (!currentQ || gameState?.phase === 'waiting' || gameState?.phase === 'ended') {
+      setVotedCount(0);
+      return;
+    }
+    const unsub = subscribeToQuestionAnswers(currentQ.id, (answers) => {
+      setVotedCount(answers.length);
+    });
+    return unsub;
+  }, [authed, questions, gameState?.currentQuestionIndex, gameState?.phase]);
 
-  // Save session when quiz ends — admin is authenticated so this write is allowed.
+  // Save session when a performance's voting round ends — admin is
+  // authenticated so this write is allowed. Passes the current question
+  // (team info) since sessions are now per-performance, not per-show.
   useEffect(() => {
     if (!authed || !gameState || gameState.phase !== 'ended') return;
     if (gameState.sessionSaved || sessionSaving.current) return;
     sessionSaving.current = true;
-    saveSession(gameState).catch(console.error);
-  }, [authed, gameState?.phase, gameState?.sessionSaved]);
+    const currentQ = questions[gameState.currentQuestionIndex ?? 0];
+    saveSession(gameState, currentQ).catch(console.error);
+  }, [authed, gameState?.phase, gameState?.sessionSaved, questions]);
 
   // Reset saving guard when a new quiz starts.
   useEffect(() => {
     if (gameState?.phase === 'waiting') sessionSaving.current = false;
   }, [gameState?.phase]);
-
-  // Auto-advance question → results when timer expires.
-  // Lives in admin (not host) so meta writes stay admin-authenticated.
-  // Transaction inside advanceToResults makes this multi-tab safe.
-  useEffect(() => {
-    if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-    if (!authed || !gameState || gameState.phase !== 'question') return;
-    if (!gameState.questionStartTime) return;
-    const currentQ = questions[gameState.currentQuestionIndex];
-    if (!currentQ) return;
-
-    const startMs =
-      gameState.questionStartTime?.toMillis?.() ??
-      (gameState.questionStartTime?.seconds ?? 0) * 1000;
-    const elapsed   = (Date.now() - startMs) / 1000;
-    const remaining = Math.max(0, (currentQ.timer ?? 15) - elapsed);
-
-    advanceTimerRef.current = setTimeout(() => {
-      advanceToResults().catch(console.error);
-    }, remaining * 1000);
-
-    return () => clearTimeout(advanceTimerRef.current);
-  }, [
-    authed,
-    gameState?.phase,
-    gameState?.currentQuestionIndex,
-    gameState?.questionStartTime?.seconds,
-    questions,
-  ]);
 
   if (authLoading) return <LoadingSpinner />;
   if (!authed)     return <LoginScreen onLogin={() => {}} />;
@@ -134,80 +106,120 @@ export default function AdminPage() {
   if (loading)     return <LoadingSpinner />;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f0a1e] via-[#1a0a2e] to-[#0a1628]">
-      {/* Header */}
-      <header className="glass border-b border-white/10 px-6 py-4 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <img src="/logo.svg" alt="QuizLive" className="w-8 h-8" />
-          <div>
-            <h1 className="font-black text-white leading-none">Admin Panel</h1>
-            <p className="text-brand-300 text-xs">{gameState?.title ?? 'QuizLive'}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="glass rounded-xl px-3 py-1.5 text-xs text-white/60">
-            {players.length} player{players.length !== 1 ? 's' : ''} · {questions.length} Q
-          </div>
-          <button
-            onClick={() => signOut(auth)}
-            className="text-xs text-white/30 hover:text-white/60 transition-colors"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
-
-      {/* Tab bar */}
-      <div className="sticky top-[65px] z-30 glass border-b border-white/10 px-4 flex gap-1 py-2">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all
-              ${tab === t.id
-                ? 'bg-brand-600 text-white shadow-lg'
-                : 'text-white/50 hover:text-white hover:bg-white/10'
-              }`}
-          >
-            {t.label}
-          </button>
-        ))}
+    <div className="min-h-screen bg-black relative">
+      {/* Nebula / ember background — same warm-black theme as the audience screens */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden bg-black">
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 90% 70% at 50% 0%, rgba(120,50,10,0.18), transparent 60%), radial-gradient(ellipse 100% 60% at 50% 100%, rgba(90,30,0,0.15), transparent 55%)',
+          }}
+        />
+        <motion.div
+          className="absolute -bottom-24 -left-20 w-[26rem] h-[26rem] rounded-full"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(255,170,60,0.55) 0%, rgba(255,120,20,0.28) 25%, rgba(255,80,0,0.1) 50%, transparent 70%)',
+            filter: 'blur(6px)',
+          }}
+          animate={{ opacity: [0.7, 1, 0.7], scale: [1, 1.06, 1] }}
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-40 h-40 rounded-full bg-white/40 blur-3xl"
+          style={{ transform: 'translate(-30%, 30%)' }}
+        />
+        <div className="absolute -top-24 -left-16 w-72 h-72 bg-orange-600/10 rounded-full blur-3xl" />
+        <div className="absolute -top-10 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 w-72 h-72 bg-orange-700/5 rounded-full blur-3xl" />
+        <svg className="absolute inset-0 w-full h-full opacity-40" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="adminStreakTL" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,140,50,0.5)" />
+              <stop offset="100%" stopColor="rgba(255,140,50,0)" />
+            </linearGradient>
+            <linearGradient id="adminStreakTR" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,140,50,0.45)" />
+              <stop offset="100%" stopColor="rgba(255,140,50,0)" />
+            </linearGradient>
+          </defs>
+          <line x1="-5%" y1="0%" x2="35%" y2="45%" stroke="url(#adminStreakTL)" strokeWidth="1.5" />
+          <line x1="0%" y1="8%" x2="30%" y2="50%" stroke="url(#adminStreakTL)" strokeWidth="1" />
+          <line x1="105%" y1="0%" x2="65%" y2="40%" stroke="url(#adminStreakTR)" strokeWidth="1.5" />
+          <line x1="100%" y1="10%" x2="70%" y2="45%" stroke="url(#adminStreakTR)" strokeWidth="1" />
+        </svg>
       </div>
 
-      {/* Migration banner — only shown on success (legacy data was migrated). */}
-      {migration?.count > 0 && (
-        <div className="px-4 py-2 text-xs text-center font-semibold
-                        bg-green-500/20 text-green-300 border-b border-green-500/40">
-          ✓ Set up {migration.count} answer key{migration.count !== 1 ? 's' : ''}
-          <button
-            onClick={() => setMigration(null)}
-            className="ml-3 text-white/40 hover:text-white"
-          >✕</button>
-        </div>
-      )}
+      <div className="relative z-10">
+        {/* Header */}
+        <header className="glass border-b border-orange-500/20 px-6 py-4 flex items-center justify-between sticky top-0 z-40">
+          <div className="flex items-center gap-3">
+            <img src="/logo-bsg.png" alt="Social Loop" className="w-8 h-8" />
+            <div>
+              <h1 className="font-black text-white leading-none">Admin Panel</h1>
+              <p className="text-brand-300 text-xs">{gameState?.title ?? 'Social Loop'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="glass rounded-xl px-3 py-1.5 text-xs text-white/60">
+              {players.length} audience · {questions.length} performance{questions.length !== 1 ? 's' : ''}
+              {' · '}
+              <span className="text-green-300 font-semibold">{votedCount} voted</span>
+              {' · '}
+              <span className="text-orange-300 font-semibold">
+                {Math.max(players.length - votedCount, 0)} left
+              </span>
+            </div>
+            <button
+              onClick={() => signOut(auth)}
+              className="text-xs text-white/30 hover:text-white/60 transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        </header>
 
-      {/* Tab content */}
-      <main className="p-4 max-w-2xl mx-auto pb-16">
-        <motion.div
-          key={tab}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          {tab === 'questions' && (
-            <QuestionEditor questions={enrichedQuestions} />
-          )}
-          {tab === 'game' && (
-            <GameControl gameState={gameState} questions={questions} />
-          )}
-          {tab === 'host' && (
-            <HostControl gameState={gameState} />
-          )}
-          {tab === 'history' && (
-            <SessionHistory />
-          )}
-        </motion.div>
-      </main>
+        {/* Tab bar */}
+        <div className="sticky top-[65px] z-30 glass border-b border-orange-500/10 px-4 flex gap-1 py-2">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all
+                ${tab === t.id
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-400 text-black shadow-lg shadow-orange-900/30'
+                  : 'text-white/50 hover:text-white hover:bg-white/10'
+                }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <main className="p-4 max-w-2xl mx-auto pb-16">
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {tab === 'questions' && (
+              <QuestionEditor questions={questions} />
+            )}
+            {tab === 'game' && (
+              <GameControl gameState={gameState} questions={questions} />
+            )}
+            {tab === 'host' && (
+              <HostControl gameState={gameState} />
+            )}
+            {tab === 'history' && (
+              <SessionHistory />
+            )}
+          </motion.div>
+        </main>
+      </div>
 
       <AboutCorner />
     </div>
