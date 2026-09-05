@@ -6,7 +6,6 @@ import { subscribeToQuestions } from '../firebase/db';
 import { pageFade } from '../lib/motion';
 import WaitingScreen    from '../components/host/WaitingScreen';
 import QuestionPhase    from '../components/host/QuestionPhase';
-import ResultsPhase     from '../components/host/ResultsPhase';
 import LeaderboardPhase from '../components/host/LeaderboardPhase';
 import EndedPhase       from '../components/host/EndedPhase';
 import LoadingSpinner   from '../components/shared/LoadingSpinner';
@@ -45,9 +44,11 @@ export default function HostPage() {
         </span>
       </div>
 
-      {/* QR overlay — bottom-left, only when showQR is on AND not during question */}
+      {/* QR overlay — bottom-left, only when showQR is on AND not during
+          question or waiting (WaitingScreen already renders its own
+          center + left QR pair, so this would otherwise duplicate it). */}
       <AnimatePresence>
-        {showQR && phase !== 'question' && (
+        {showQR && phase !== 'question' && phase !== 'waiting' && (
           <motion.div
             key="qr-overlay"
             initial={{ opacity: 0, scale: 0.85, y: 20 }}
@@ -70,46 +71,37 @@ export default function HostPage() {
       </AnimatePresence>
 
       <AnimatePresence mode="wait">
-        {phase === 'waiting' && (
-          <motion.div key="waiting" {...pageFade} className="min-h-screen">
-            <WaitingScreen gameState={gameState} />
-          </motion.div>
-        )}
-
-        {phase === 'question' && currentQ && (
-          <motion.div key={`q-${qIndex}`} {...pageFade} className="min-h-screen">
-            <QuestionPhase
-              question={currentQ}
-              gameState={gameState}
-              questionIndex={qIndex}
-              totalQuestions={questions.length}
-            />
-          </motion.div>
-        )}
-
-        {phase === 'results' && currentQ && (
-          <motion.div key={`r-${qIndex}`} {...pageFade} className="min-h-screen">
-            <ResultsPhase
-              question={currentQ}
-              questionIndex={qIndex}
-              totalQuestions={questions.length}
-            />
-          </motion.div>
-        )}
-
-        {phase === 'leaderboard' && (
-          <motion.div key={`lb-${qIndex}`} {...pageFade} className="min-h-screen">
+        {gameState?.leaderboardVisible ? (
+          <motion.div key="leaderboard" {...pageFade} className="min-h-screen">
             <LeaderboardPhase
               gameState={gameState}
               questions={questions}
             />
           </motion.div>
-        )}
+        ) : (
+          <>
+            {phase === 'waiting' && (
+              <motion.div key="waiting" {...pageFade} className="min-h-screen">
+                <WaitingScreen gameState={gameState} />
+              </motion.div>
+            )}
 
-        {phase === 'ended' && (
-          <motion.div key="ended" {...pageFade} className="min-h-screen">
-            <EndedPhase />
-          </motion.div>
+            {phase === 'question' && currentQ && (
+              <motion.div key={`q-${qIndex}`} {...pageFade} className="min-h-screen">
+                <QuestionPhase
+                  question={currentQ}
+                  questionIndex={qIndex}
+                  totalQuestions={questions.length}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'ended' && (
+              <motion.div key="ended" {...pageFade} className="min-h-screen">
+                <EndedPhase />
+              </motion.div>
+            )}
+          </>
         )}
       </AnimatePresence>
     </div>
