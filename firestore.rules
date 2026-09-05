@@ -71,13 +71,19 @@ service cloud.firestore {
     }
 
     // ─── players ──────────────────────────────────────────────
-    // Anyone can join (create) with a 2-20 char name and score=0.
+    // Anyone can join (create) with an email as the `name` field and score=0.
+    // Was previously a 2-20 char registration-number scheme; now accepts
+    // VIT Bhopal institute emails and Gmail addresses (up to 60 chars covers
+    // both patterns comfortably). Regex mirrors the client-side check in
+    // db.js/usePlayer.js so a direct Firestore write (bypassing the UI)
+    // still can't create a player with an arbitrary/malicious name.
     // No allow update — scores are computed from /answers at read time.
     match /players/{playerId} {
       allow read:   if true;
       allow create: if request.resource.data.name is string
-                    && request.resource.data.name.size() >= 2
-                    && request.resource.data.name.size() <= 20
+                    && request.resource.data.name.size() >= 5
+                    && request.resource.data.name.size() <= 60
+                    && request.resource.data.name.matches('^[a-z0-9._%+-]+@(vitbhopal\\.ac\\.in|gmail\\.com)$')
                     && request.resource.data.score == 0;
       allow delete: if request.auth != null;
     }

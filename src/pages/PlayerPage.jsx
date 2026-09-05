@@ -14,9 +14,9 @@ import ErrorScreen       from '../components/shared/ErrorScreen';
 import { pageFade as fade } from '../lib/motion';
 
 export default function PlayerPage() {
-  const { gameState, loading, error: gameError }       = useGameState();
-  const { playerId, playerName, join, joining, error, suggested, setSuggested, setError, verified } = usePlayer();
-  const [questions, setQuestions]                      = useState([]);
+  const { gameState, loading, error: gameError } = useGameState();
+  const { playerId, regNumber, join, joining, error, setError, verified } = usePlayer();
+  const [questions, setQuestions] = useState([]);
 
   useEffect(() => {
     const unsub = subscribeToQuestions(setQuestions);
@@ -32,8 +32,7 @@ export default function PlayerPage() {
         onJoin={join}
         joining={joining}
         error={error}
-        suggested={suggested}
-        onClearSuggested={() => { setSuggested(''); setError(''); }}
+        onClearError={() => setError('')}
         gameTitle={gameState?.title}
       />
     );
@@ -42,13 +41,25 @@ export default function PlayerPage() {
   const phase    = gameState?.phase ?? 'waiting';
   const currentQ = questions[gameState?.currentQuestionIndex ?? 0];
 
+  // Safety net: if phase is 'question' or 'results' but the matching
+  // question doc doesn't exist yet (e.g. deleted mid-session, or the
+  // admin advanced the phase before adding questions), fall back to a
+  // visible waiting state instead of silently rendering nothing.
+  const missingQuestion = (phase === 'question' || phase === 'results') && !currentQ;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f0a1e] via-[#1a0a2e] to-[#0a1628]">
+    <div className="min-h-screen bg-black">
       <AnimatePresence mode="wait">
 
         {phase === 'waiting' && (
           <motion.div key="lobby" {...fade}>
-            <LobbyScreen playerName={playerName} gameTitle={gameState?.title} />
+            <LobbyScreen regNumber={regNumber} gameTitle={gameState?.title} />
+          </motion.div>
+        )}
+
+        {missingQuestion && (
+          <motion.div key="missing-question" {...fade}>
+            <LobbyScreen regNumber={regNumber} gameTitle={gameState?.title} />
           </motion.div>
         )}
 
@@ -73,13 +84,13 @@ export default function PlayerPage() {
 
         {phase === 'leaderboard' && (
           <motion.div key="leaderboard" {...fade}>
-            <PlayerLeaderboard playerId={playerId} playerName={playerName} />
+            <PlayerLeaderboard playerId={playerId} regNumber={regNumber} />
           </motion.div>
         )}
 
         {phase === 'ended' && (
           <motion.div key="ended" {...fade}>
-            <EndedScreen playerId={playerId} playerName={playerName} />
+            <EndedScreen playerId={playerId} regNumber={regNumber} />
           </motion.div>
         )}
 

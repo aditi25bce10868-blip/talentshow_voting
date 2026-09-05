@@ -237,30 +237,36 @@ export const migrateAnswerKeys = async () => {
 };
 
 // ─── Players ──────────────────────────────────────────────────
-export const joinGame = async (rawName) => {
-  // Server-side name validation (UI also enforces this, but block bypass attempts)
-  const name = String(rawName ?? '').trim();
-  if (name.length < 2 || name.length > 20) {
-    throw new Error('INVALID_NAME');
+// Accepts VIT Bhopal institute emails like:
+//   anushka25BCE10978@vitbhopal.ac.in
+//   ANNN21BCE156@vitbhopal.ac.in
+// Pattern: name (letters) + 2 digits + 3 letters + 3-6 digits + @vitbhopal.ac.in
+// Digit-group lengths vary across students (seen 3, 4, and 5 digits), so the
+// trailing digit count is a range rather than a fixed width.
+const VIT_BHOPAL_EMAIL_RE = /^[a-z]+[0-9]{2}[a-z]{3}[0-9]{3,6}@vitbhopal\.ac\.in$/i;
+
+// Also accept any personal Gmail address as a fallback join ID.
+const GMAIL_EMAIL_RE = /^[a-z0-9._%+-]+@gmail\.com$/i;
+
+export const joinGame = async (rawEmail) => {
+  // Server-side email validation (UI also enforces this, but block bypass attempts)
+  const email = String(rawEmail ?? '').trim().toLowerCase();
+  if (!VIT_BHOPAL_EMAIL_RE.test(email) && !GMAIL_EMAIL_RE.test(email)) {
+    throw new Error('INVALID_REG_NO');
   }
 
-  // Fetch all players to do case-insensitive check (fine for ≤50 players)
-  const allSnap  = await getDocs(playersCol());
-  const allNames = allSnap.docs.map((d) => d.data().name.toLowerCase());
+  // Fetch all players to do a case-insensitive duplicate check (fine for ≤50 players)
+  const allSnap   = await getDocs(playersCol());
+  const allEmails = allSnap.docs.map((d) => d.data().name.toLowerCase());
 
-  if (allNames.includes(name.toLowerCase())) {
-    // Find next free suffix: Siva2, Siva3 …
-    let n = 2;
-    while (allNames.includes(`${name.toLowerCase()}${n}`)) n++;
-    const err = new Error('NAME_TAKEN');
-    err.suggested = `${name}${n}`;
-    throw err;
+  if (allEmails.includes(email)) {
+    throw new Error('ALREADY_JOINED');
   }
 
   const ref = doc(playersCol());
   await setDoc(ref, {
     id: ref.id,
-    name,
+    name: email,
     score: 0,
     joinedAt: serverTimestamp(),
   });
