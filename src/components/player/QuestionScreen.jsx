@@ -181,7 +181,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
             key={Math.ceil(timeLeft)}
             initial={{ scale: 1.15 }}
             animate={{ scale: 1 }}
-            className="text-lg font-black tabular-nums px-4 py-1.5 rounded-xl border"
+            className="text-2xl font-black tabular-nums px-4 py-1.5 rounded-xl border"
             style={{ color: barColor, borderColor: barColor }}
           >
             {Math.ceil(timeLeft)}s
@@ -190,7 +190,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
 
         {/* Team name */}
         <div>
-          <label className="block text-xs font-bold text-orange-400 mb-2 uppercase tracking-wider">
+          <label className="block text-sm font-bold text-orange-400 mb-2 uppercase tracking-wider">
             Team Name
           </label>
           <div className="relative">
@@ -202,7 +202,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
               placeholder="Team name"
               maxLength={40}
               className="w-full bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3.5 pr-11 text-white
-                         placeholder-white/30 text-base font-medium focus:outline-none
+                         placeholder-white/30 text-lg font-medium focus:outline-none
                          focus:border-orange-400 focus:bg-black/70 transition-all duration-300
                          disabled:opacity-50"
             />
@@ -219,7 +219,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
 
         {/* Performance type */}
         <div>
-          <label className="block text-xs font-bold text-orange-400 mb-2 uppercase tracking-wider">
+          <label className="block text-sm font-bold text-orange-400 mb-2 uppercase tracking-wider">
             Performance Type
           </label>
           <div className="relative">
@@ -228,7 +228,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
               onChange={(e) => setPerfType(e.target.value)}
               disabled={expired}
               className="w-full appearance-none bg-black/50 border border-orange-500/30 rounded-xl px-4 py-3.5 pr-11
-                         text-base font-medium focus:outline-none focus:border-orange-400 focus:bg-black/70
+                         text-lg font-medium focus:outline-none focus:border-orange-400 focus:bg-black/70
                          transition-all duration-300 disabled:opacity-50"
               style={{ color: perfType ? '#fff' : 'rgba(255,255,255,0.3)' }}
             >
@@ -274,10 +274,10 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
               >
                 <span className="flex items-center shrink-0" style={{ letterSpacing: '1px' }}>
                   {Array.from({ length: r.value }).map((_, i) => (
-                    <span key={i} className="text-xl text-amber-400">★</span>
+                    <span key={i} className="text-2xl text-amber-400">★</span>
                   ))}
                 </span>
-                <span className="text-sm font-bold text-white tracking-wide flex-1 text-left">
+                <span className="text-base font-bold text-white tracking-wide flex-1 text-left">
                   {r.label}
                 </span>
                 {isChosen ? (
@@ -286,7 +286,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
                     animate={{ scale: 1 }}
                     className="w-5 h-5 bg-orange-400 rounded-full flex items-center justify-center shrink-0"
                   >
-                    <span className="text-xs text-black font-black">✓</span>
+                    <span className="text-sm text-black font-black">✓</span>
                   </motion.div>
                 ) : (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-white/40 shrink-0">
@@ -306,7 +306,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-center rounded-xl p-3 bg-red-500/20 border
-                         border-red-500/30 text-red-300 font-bold text-sm"
+                         border-red-500/30 text-red-300 font-bold text-base"
             >
               ⏰ No rating submitted
             </motion.div>
@@ -316,7 +316,7 @@ export default function QuestionScreen({ question, playerId, questionStartTime, 
               key="locked"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-center rounded-xl p-3 bg-white/[0.03] border border-orange-500/20 text-white/50 text-sm font-medium"
+              className="text-center rounded-xl p-3 bg-white/[0.03] border border-orange-500/20 text-white/50 text-base font-medium"
             >
               Rating locked in — watch the screen!
             </motion.div>
