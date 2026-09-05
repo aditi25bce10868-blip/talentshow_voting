@@ -2,19 +2,22 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   startQuiz,
-  nextQuestion,
-  advanceToLeaderboard,
   endQuiz,
   resetGame,
-  advanceToResults,
+  toggleLeaderboard, // NEW — flips gameState.leaderboardVisible, decoupled from `phase`
 } from '../../firebase/db';
 
+// NOTE: 'leaderboard' is no longer a step in the voting flow — the
+// leaderboard is now a standalone overlay (see the Leaderboard card below),
+// not a phase the game passes through between performances.
+// NOTE: there is no 'results' phase anymore — voting goes straight from
+// 'question' to 'ended' via the single "End Show" button. The timer is
+// audience-only (shown on their phones); the host/admin no longer track
+// a countdown or need a manual "close voting early" step.
 const PHASE_LABELS = {
-  waiting:     { label: 'Waiting for players', color: 'text-blue-300',   dot: 'bg-blue-400' },
-  question:    { label: 'Question in progress', color: 'text-yellow-300', dot: 'bg-yellow-400' },
-  results:     { label: 'Showing results',      color: 'text-orange-300', dot: 'bg-orange-400' },
-  leaderboard: { label: 'Leaderboard',          color: 'text-green-300',  dot: 'bg-green-400' },
-  ended:       { label: 'Quiz ended',           color: 'text-red-300',    dot: 'bg-red-400' },
+  waiting:  { label: 'Waiting for audience',   color: 'text-blue-300',   dot: 'bg-blue-400' },
+  question: { label: 'Voting open',            color: 'text-yellow-300', dot: 'bg-yellow-400' },
+  ended:    { label: 'Show ended',             color: 'text-red-300',    dot: 'bg-red-400' },
 };
 
 function ActionButton({ label, onClick, disabled, variant = 'primary', danger = false }) {
@@ -52,12 +55,9 @@ function ActionButton({ label, onClick, disabled, variant = 'primary', danger = 
 
 export default function GameControl({ gameState, questions }) {
   const phase    = gameState?.phase ?? 'waiting';
-  const qIndex   = gameState?.currentQuestionIndex ?? 0;
-  const total    = questions.length;
-  const currentQ = questions[qIndex];
+  const currentQ = questions[gameState?.currentQuestionIndex ?? 0];
   const phaseInfo = PHASE_LABELS[phase] ?? PHASE_LABELS.waiting;
-
-  const isLastQuestion = qIndex >= total - 1;
+  const leaderboardVisible = gameState?.leaderboardVisible ?? false;
 
   // Inline two-step confirm for Reset — window.confirm() is silently
   // suppressed by some browsers, which made the button look dead.
@@ -84,14 +84,20 @@ export default function GameControl({ gameState, questions }) {
         <div className="flex items-center gap-3 mb-3">
           <span className={`w-3 h-3 rounded-full ${phaseInfo.dot} animate-pulse`} />
           <span className={`font-bold ${phaseInfo.color}`}>{phaseInfo.label}</span>
+          {leaderboardVisible && (
+            <span className="ml-auto text-xs font-bold text-purple-300 bg-purple-500/20 px-2 py-1 rounded-full">
+              🏆 Leaderboard live
+            </span>
+          )}
         </div>
 
         {phase !== 'waiting' && phase !== 'ended' && (
           <div className="glass rounded-xl p-3">
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Current Question</p>
-            <p className="text-white font-semibold">
-              {qIndex + 1} / {total}: {currentQ?.text ?? '—'}
-            </p>
+            <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Now Performing</p>
+            <p className="text-white font-semibold">{currentQ?.teamName ?? '—'}</p>
+            {currentQ?.teamType && (
+              <p className="text-white/50 text-xs mt-1">{currentQ.teamType}</p>
+            )}
           </div>
         )}
       </div>
@@ -100,53 +106,45 @@ export default function GameControl({ gameState, questions }) {
       <div className="glass rounded-2xl p-4 space-y-3">
         <p className="text-xs text-white/40 uppercase tracking-wider font-semibold">Controls</p>
 
-        {/* Waiting → Start */}
+        {/* Waiting → Start (unchanged function, relabeled for the show) */}
         {phase === 'waiting' && (
           <ActionButton
-            label={`🚀 Start Quiz (${total} question${total !== 1 ? 's' : ''})`}
-            disabled={total === 0}
+            label={currentQ?.teamName ? `🚀 Start Voting: ${currentQ.teamName}` : '🚀 Start Voting'}
+            disabled={!currentQ}
             onClick={startQuiz}
           />
         )}
 
-        {/* Question phase controls */}
+        {/* Question ("voting") phase → End Show directly. Performances cycle
+            via Reset → admin edits teamName/teamType → Start again, not by
+            paging through a pre-loaded list — so this is a single action. */}
         {phase === 'question' && (
           <ActionButton
-            label="⏭ Skip to Results"
-            onClick={advanceToResults}
-            variant="secondary"
+            label="🏁 End Show"
+            onClick={endQuiz}
           />
-        )}
-
-        {/* Results → Leaderboard */}
-        {phase === 'results' && (
-          <ActionButton
-            label="📊 Show Leaderboard"
-            onClick={advanceToLeaderboard}
-          />
-        )}
-
-        {/* Leaderboard → Next / End */}
-        {phase === 'leaderboard' && (
-          <>
-            {!isLastQuestion && (
-              <ActionButton
-                label={`▶ Next Question (${qIndex + 2} / ${total})`}
-                onClick={() => nextQuestion(qIndex, total)}
-              />
-            )}
-            <ActionButton
-              label={isLastQuestion ? '🏁 End Quiz' : '🏁 End Quiz Early'}
-              onClick={endQuiz}
-              variant={isLastQuestion ? 'primary' : 'secondary'}
-            />
-          </>
         )}
 
         {/* Ended */}
         {phase === 'ended' && (
-          <p className="text-center text-white/40 text-sm py-2">Quiz has ended. Reset to start again.</p>
+          <p className="text-center text-white/40 text-sm py-2">
+            Show ended. Edit the performance details for the next team, then Reset and Start.
+          </p>
         )}
+      </div>
+
+      {/* Leaderboard — independent of phase. Admin can reveal/hide it any
+          time; typically used once every performance is done, to show the
+          top 3 teams. Actual top-3 data comes from session history —
+          whatever renders the leaderboard (host screen, etc.) should
+          subscribe to gameState.leaderboardVisible to know when to show it. */}
+      <div className="glass rounded-2xl p-4 space-y-3">
+        <p className="text-xs text-white/40 uppercase tracking-wider font-semibold">Leaderboard</p>
+        <ActionButton
+          label={leaderboardVisible ? '🙈 Hide Leaderboard' : '🏆 Show Leaderboard (Top 3)'}
+          onClick={toggleLeaderboard}
+          variant={leaderboardVisible ? 'secondary' : 'primary'}
+        />
       </div>
 
       {/* Reset */}
@@ -154,8 +152,8 @@ export default function GameControl({ gameState, questions }) {
         <p className="text-xs text-white/40 uppercase tracking-wider font-semibold mb-3">Danger Zone</p>
         <ActionButton
           label={confirmReset
-            ? '⚠ Confirm reset — click again to wipe players & answers'
-            : '🔄 Reset Game (clears all players & answers)'}
+            ? '⚠ Confirm reset — click again to wipe teams & votes'
+            : '🔄 Reset Show (clears all teams & votes)'}
           onClick={handleReset}
           danger
         />
