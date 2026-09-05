@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { updateGameState } from '../../firebase/db';
 
 export default function HostControl({ gameState }) {
-  const [title,    setTitle]    = useState(gameState?.title   ?? 'QuizLive');
+  const [title,    setTitle]    = useState(gameState?.title   ?? 'Social Loop');
   const [joinUrl,  setJoinUrl]  = useState(gameState?.joinUrl ?? window.location.origin);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
@@ -16,7 +16,7 @@ export default function HostControl({ gameState }) {
   // QR preview must reflect the SAVED url, not the unsaved input — otherwise
   // admins type a new URL, see the QR update, and assume it's already live.
   const savedJoinUrl = gameState?.joinUrl || window.location.origin;
-  const dirty        = joinUrl !== savedJoinUrl || title !== (gameState?.title ?? 'QuizLive');
+  const dirty        = joinUrl !== savedJoinUrl || title !== (gameState?.title ?? 'Social Loop');
 
   const copyUrl = () => {
     navigator.clipboard.writeText(savedJoinUrl);
@@ -48,10 +48,10 @@ export default function HostControl({ gameState }) {
       <motion.button
         whileTap={{ scale: 0.97 }}
         onClick={openHost}
-        className="w-full py-4 rounded-xl font-black text-lg text-white
-                   bg-gradient-to-r from-brand-600 to-purple-600
-                   hover:from-brand-500 hover:to-purple-500 transition-all
-                   shadow-lg shadow-brand-900/50 flex items-center justify-center gap-3"
+        className="w-full py-4 rounded-xl font-black text-lg text-black
+                   bg-gradient-to-r from-orange-500 to-orange-400
+                   hover:from-orange-400 hover:to-orange-300 transition-all
+                   shadow-lg shadow-orange-900/40 flex items-center justify-center gap-3"
       >
         🖥 Open Host Screen (Projector)
       </motion.button>
@@ -83,16 +83,16 @@ export default function HostControl({ gameState }) {
 
       {/* Settings */}
       <div className="glass rounded-2xl p-5 space-y-4">
-        <p className="text-xs text-white/40 uppercase tracking-wider font-semibold">Game Settings</p>
+        <p className="text-xs text-white/40 uppercase tracking-wider font-semibold">Vote Settings</p>
 
         <div>
-          <label className="label">Game Title</label>
+          <label className="label">Vote Title</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="input"
-            placeholder="QuizLive"
+            placeholder="Social Loop"
           />
         </div>
 
