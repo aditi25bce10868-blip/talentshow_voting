@@ -6,7 +6,6 @@ import { subscribeToQuestions } from '../firebase/db';
 import JoinScreen        from '../components/player/JoinScreen';
 import LobbyScreen       from '../components/player/LobbyScreen';
 import QuestionScreen    from '../components/player/QuestionScreen';
-import AnswerResult      from '../components/player/AnswerResult';
 import PlayerLeaderboard from '../components/player/PlayerLeaderboard';
 import EndedScreen       from '../components/player/EndedScreen';
 import LoadingSpinner    from '../components/shared/LoadingSpinner';
@@ -41,57 +40,48 @@ export default function PlayerPage() {
   const phase    = gameState?.phase ?? 'waiting';
   const currentQ = questions[gameState?.currentQuestionIndex ?? 0];
 
-  // Safety net: if phase is 'question' or 'results' but the matching
-  // question doc doesn't exist yet (e.g. deleted mid-session, or the
-  // admin advanced the phase before adding questions), fall back to a
-  // visible waiting state instead of silently rendering nothing.
-  const missingQuestion = (phase === 'question' || phase === 'results') && !currentQ;
+  // Safety net: if phase is 'question' but the current performance doc
+  // doesn't exist yet (e.g. admin hasn't set up the next team yet, or it
+  // was deleted mid-session), fall back to a visible waiting state instead
+  // of silently rendering nothing.
+  const missingQuestion = phase === 'question' && !currentQ;
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-gradient-to-br from-[#0f0a1e] via-[#1a0a2e] to-[#0a1628]">
       <AnimatePresence mode="wait">
 
-        {phase === 'waiting' && (
-          <motion.div key="lobby" {...fade}>
-            <LobbyScreen regNumber={regNumber} gameTitle={gameState?.title} />
-          </motion.div>
-        )}
-
-        {missingQuestion && (
-          <motion.div key="missing-question" {...fade}>
-            <LobbyScreen regNumber={regNumber} gameTitle={gameState?.title} />
-          </motion.div>
-        )}
-
-        {/* QuestionScreen manages its own answered/expired state */}
-        {phase === 'question' && currentQ && (
-          <motion.div key={`q-${gameState.currentQuestionIndex}`} {...fade}>
-            <QuestionScreen
-              question={currentQ}
-              playerId={playerId}
-              questionStartTime={gameState.questionStartTime}
-              questionIndex={gameState.currentQuestionIndex}
-              totalQuestions={questions.length}
-            />
-          </motion.div>
-        )}
-
-        {phase === 'results' && currentQ && (
-          <motion.div key={`ar-${gameState.currentQuestionIndex}`} {...fade}>
-            <AnswerResult question={currentQ} playerId={playerId} />
-          </motion.div>
-        )}
-
-        {phase === 'leaderboard' && (
+        {/* Leaderboard overlay — independent of phase, admin can reveal it
+            any time (typically once every performance is done). Checked
+            first so it takes priority over whatever phase is showing. */}
+        {gameState?.leaderboardVisible ? (
           <motion.div key="leaderboard" {...fade}>
             <PlayerLeaderboard playerId={playerId} regNumber={regNumber} />
           </motion.div>
-        )}
+        ) : (
+          <>
+            {(phase === 'waiting' || missingQuestion) && (
+              <motion.div key="lobby" {...fade}>
+                <LobbyScreen regNumber={regNumber} gameTitle={gameState?.title} />
+              </motion.div>
+            )}
 
-        {phase === 'ended' && (
-          <motion.div key="ended" {...fade}>
-            <EndedScreen playerId={playerId} regNumber={regNumber} />
-          </motion.div>
+            {/* QuestionScreen manages its own answered/expired state */}
+            {phase === 'question' && currentQ && (
+              <motion.div key={`q-${gameState.currentQuestionIndex}`} {...fade}>
+                <QuestionScreen
+                  question={currentQ}
+                  playerId={playerId}
+                  questionStartTime={gameState.questionStartTime}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'ended' && (
+              <motion.div key="ended" {...fade}>
+                <EndedScreen regNumber={regNumber} />
+              </motion.div>
+            )}
+          </>
         )}
 
       </AnimatePresence>
