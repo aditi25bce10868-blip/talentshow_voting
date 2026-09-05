@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { subscribeToPlayerAnswer } from '../../firebase/db';
 
 export default function AnswerResult({ question, playerId }) {
-  const [voted,   setVoted]   = useState(false);
+  const [answer,  setAnswer]  = useState(null); // {rating, ...} | null once loaded
   const [loading, setLoading] = useState(true);
 
   // Confirm the vote was actually recorded before showing success.
@@ -11,7 +11,7 @@ export default function AnswerResult({ question, playerId }) {
     let settled = false;
     const unsub = subscribeToPlayerAnswer(question.id, playerId, (r) => {
       if (r) {
-        setVoted(true);
+        setAnswer(r);
         setLoading(false);
         settled = true;
       }
@@ -21,6 +21,9 @@ export default function AnswerResult({ question, playerId }) {
     const t = setTimeout(() => { if (!settled) setLoading(false); }, 4000);
     return () => { unsub(); clearTimeout(t); };
   }, [question.id, playerId]);
+
+  const voted  = answer !== null;
+  const rating = answer?.rating ?? null;
 
   const embers = [
     { top: '4%', left: '8%', size: 3, delay: 0 },
@@ -147,6 +150,20 @@ export default function AnswerResult({ question, playerId }) {
           <span className="h-px w-8 bg-gradient-to-l from-transparent to-orange-500/60" />
         </div>
       </motion.div>
+
+      {/* Their star rating, if one was recorded */}
+      {voted && rating != null && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="relative z-10 flex gap-1 text-3xl"
+        >
+          {[1, 2, 3, 4, 5].map((s) => (
+            <span key={s} className={s <= rating ? 'text-amber-400' : 'text-white/15'}>★</span>
+          ))}
+        </motion.div>
+      )}
 
       <motion.p
         initial={{ opacity: 0 }}
