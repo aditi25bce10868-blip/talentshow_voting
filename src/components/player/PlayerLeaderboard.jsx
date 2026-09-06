@@ -16,17 +16,17 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
   // Podium display order: 2nd (left) · 1st (center, tallest) · 3rd (right)
   const podium = [
     {
-      player: top3[1], rank: 2, height: 'h-64', badgeSize: 'w-11 h-11 text-sm',
+      player: top3[1], rank: 2, height: 'h-44 sm:h-64', badgeSize: 'w-8 h-8 text-[11px] sm:w-11 sm:h-11 sm:text-sm',
       cardBg: 'bg-slate-300', badgeBg: 'bg-white', badgeText: 'text-slate-500',
       avatarBg: 'bg-white/60', avatarColor: 'text-sky-500',
     },
     {
-      player: top3[0], rank: 1, height: 'h-80', badgeSize: 'w-12 h-12 text-base',
+      player: top3[0], rank: 1, height: 'h-56 sm:h-80', badgeSize: 'w-9 h-9 text-xs sm:w-12 sm:h-12 sm:text-base',
       cardBg: 'bg-amber-400', badgeBg: 'bg-white', badgeText: 'text-amber-500',
       avatarBg: 'bg-white/60', avatarColor: 'text-sky-500',
     },
     {
-      player: top3[2], rank: 3, height: 'h-56', badgeSize: 'w-11 h-11 text-sm',
+      player: top3[2], rank: 3, height: 'h-40 sm:h-56', badgeSize: 'w-8 h-8 text-[11px] sm:w-11 sm:h-11 sm:text-sm',
       cardBg: 'bg-orange-500', badgeBg: 'bg-white', badgeText: 'text-orange-600',
       avatarBg: 'bg-white/60', avatarColor: 'text-sky-500',
     },
@@ -66,13 +66,13 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.03 }}
       transition={{ delay: rank === 1 ? 0.1 : rank === 2 ? 0.25 : 0.4, duration: 0.5 }}
-      className={`relative ${height} w-full max-w-[9.5rem] flex flex-col items-center
-                  rounded-t-2xl ${cardBg} pt-9 px-3 shadow-lg`}
+      className={`relative ${height} flex-1 max-w-[6.5rem] sm:max-w-[9.5rem] flex flex-col items-center
+                  rounded-t-2xl ${cardBg} pt-6 sm:pt-9 px-1.5 sm:px-3 shadow-lg`}
     >
       {/* Crown above #1 */}
       {rank === 1 && (
         <motion.span
-          className="absolute -top-9 left-1/2 -translate-x-1/2 text-2xl z-10"
+          className="absolute -top-6 sm:-top-9 left-1/2 -translate-x-1/2 text-lg sm:text-2xl z-10"
           animate={{ y: [0, -3, 0] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         >
@@ -82,29 +82,24 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
 
       {/* Rank badge, overlapping the top edge of the card */}
       <div
-        className={`absolute -top-5 left-1/2 -translate-x-1/2 ${badgeSize} rounded-full ${badgeBg} ${badgeText}
+        className={`absolute -top-3.5 sm:-top-5 left-1/2 -translate-x-1/2 ${badgeSize} rounded-full ${badgeBg} ${badgeText}
                     flex items-center justify-center font-black shadow-md z-10`}
       >
         #{rank}
       </div>
 
-      {/* Avatar */}
-      <div className={`relative mb-3 mt-1 w-14 h-14 rounded-full ${avatarBg} flex items-center justify-center`}>
-        <svg viewBox="0 0 24 24" fill="none" className={`w-7 h-7 ${avatarColor}`}>
-          <path
-            d="M22 5.9c-.77.34-1.6.57-2.46.67a4.3 4.3 0 0 0 1.88-2.37 8.6 8.6 0 0 1-2.72 1.04 4.28 4.28 0 0 0-7.29 3.9A12.15 12.15 0 0 1 2.9 4.6a4.28 4.28 0 0 0 1.33 5.71 4.24 4.24 0 0 1-1.94-.54v.05a4.28 4.28 0 0 0 3.43 4.2 4.3 4.3 0 0 1-1.93.07 4.28 4.28 0 0 0 4 2.97A8.6 8.6 0 0 1 2 18.57a12.13 12.13 0 0 0 6.56 1.92c7.87 0 12.18-6.52 12.18-12.18l-.01-.55A8.7 8.7 0 0 0 22 5.9z"
-            fill="currentColor"
-          />
-        </svg>
+      {/* Avatar — rank medal */}
+      <div className={`relative mb-1.5 mt-0.5 sm:mb-3 sm:mt-1 w-9 h-9 sm:w-14 sm:h-14 rounded-full ${avatarBg} flex items-center justify-center text-lg sm:text-3xl`}>
+        {rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}
       </div>
 
       {/* Name */}
-      <p className="relative z-10 font-black text-slate-900 text-base truncate max-w-full">
+      <p className="relative z-10 font-black text-slate-900 text-[11px] sm:text-base truncate max-w-full">
         {player ? player.name : '—'}
       </p>
 
       {/* Score */}
-      <p className="relative z-10 text-slate-800/80 font-semibold text-sm mt-0.5 mb-2">
+      <p className="relative z-10 text-slate-800/80 font-semibold text-[10px] sm:text-sm mt-0.5 mb-1.5 sm:mb-2">
         {player ? `${player.score ?? 0} pts` : '—'}
       </p>
     </motion.div>
@@ -192,7 +187,7 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
         className="relative z-10 flex items-center justify-center gap-2 mb-2"
       >
         <span className="text-3xl">🏆</span>
-        <h2 className="text-6xl font-black text-orange-500 drop-shadow-[0_0_20px_rgba(249,115,22,0.4)]">
+        <h2 className="text-5xl font-black text-orange-500 drop-shadow-[0_0_20px_rgba(249,115,22,0.4)]">
           Leaderboard
         </h2>
       </motion.div>
@@ -208,7 +203,7 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
       </motion.h3>
 
       {/* Podium */}
-      <div className="relative z-10 flex items-end justify-center gap-3 max-w-md mx-auto w-full pb-2">
+      <div className="relative z-10 flex items-end justify-center gap-2 sm:gap-3 max-w-md mx-auto w-full pb-2">
         <Card {...podium[0]} />
         <Card {...podium[1]} />
         <Card {...podium[2]} />
