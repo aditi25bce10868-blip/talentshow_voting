@@ -55,7 +55,7 @@ export default function PlayerPage() {
             first so it takes priority over whatever phase is showing. */}
         {gameState?.leaderboardVisible ? (
           <motion.div key="leaderboard" {...fade}>
-            <PlayerLeaderboard playerId={playerId} regNumber={regNumber} />
+            <PlayerLeaderboard />
           </motion.div>
         ) : (
           <>
