@@ -3,20 +3,17 @@
  *
  * Collections:
  *   meta/gameState      – single game-state document
- *   questions/{id}      – question documents, ordered by `order`
- *   players/{id}        – player documents
- *   answers/{qId_pId}   – one answer doc per (question, player) pair
+ *   questions/{id}      – one reusable "current performance" doc, edited
+ *                          between rounds: { teamName, teamType, timer, order }
+ *   players/{id}        – audience member docs
+ *   answers/{qId_pId}   – one rating doc per (question, player) pair, LOCKED
+ *                          (create-only — see firestore.rules)
+ *   sessions/{id}       – one snapshot per performance, saved when voting
+ *                          for that team ends
  *
- * Scoring formula (per question, max 30 pts):
- *   correct → max(5, round(30 - (timeTaken / timer) * 25))
- *   wrong   → 0
- *
- *   Examples (15s timer):
- *     0s  → 30 pts   (fastest)
- *     5s  → ~22 pts
- *     10s → ~13 pts
- *     15s → 5 pts    (slowest correct)
- *   Works proportionally for any timer length.
+ * Rating model (talent show):
+ *   Audience picks 1–5 stars per performance. No correct/wrong, no time
+ *   bonus — the star value IS the score. calcScore() just clamps/rounds it.
  */
 import {
   doc,
@@ -24,10 +21,8 @@ import {
   getDoc,
   getDocs,
   setDoc,
-  addDoc,
   updateDoc,
   deleteDoc,
-  deleteField,
   query,
   where,
   orderBy,
@@ -42,17 +37,15 @@ import { db } from './config';
 // ─── Refs ─────────────────────────────────────────────────────
 const gameRef        = doc(db, 'meta', 'gameState');
 const questionsCol   = () => collection(db, 'questions');
-const answerKeysCol  = () => collection(db, 'answerKeys');
 const playersCol     = () => collection(db, 'players');
 const answersCol     = () => collection(db, 'answers');
 const sessionsCol    = () => collection(db, 'sessions');
 
 // ─── Scoring ──────────────────────────────────────────────────
-export const calcScore = (isCorrect, timeTaken, timer) => {
-  if (!isCorrect) return 0;
-  const t = Math.max(0, timeTaken);
-  const d = Math.max(1, timer);               // avoid division by zero
-  return Math.max(5, Math.round(30 - (t / d) * 25));
+// A rating IS the score — no correctness, no time weighting.
+export const calcScore = (rating) => {
+  const r = Math.round(Number(rating));
+  return Math.max(1, Math.min(5, r || 0));
 };
 
 // ─── Game state ───────────────────────────────────────────────
@@ -66,6 +59,7 @@ export const initGameState = async () => {
       title: 'QuizLive',
       joinUrl: import.meta.env.VITE_JOIN_URL || window.location.origin,
       showQR: false,
+      leaderboardVisible: false,
     });
   }
 };
@@ -88,7 +82,10 @@ export const startQuiz = () =>
     sessionSaved: false,
   });
 
-/** Idempotent via transaction — safe for multiple admin tabs. */
+/** Idempotent via transaction — safe for multiple admin tabs.
+ *  Covers BOTH ways the "thanks for voting" screen appears: natural timer
+ *  expiry (called from AdminPage's countdown effect) and the host manually
+ *  ending voting early (called from GameControl's "Close Voting Early"). */
 export const advanceToResults = () =>
   runTransaction(db, async (tx) => {
     const snap = await tx.get(gameRef);
@@ -97,22 +94,30 @@ export const advanceToResults = () =>
     }
   });
 
-export const advanceToLeaderboard = () =>
-  updateDoc(gameRef, { phase: 'leaderboard' });
-
-export const nextQuestion = async (currentIndex, total) => {
-  if (currentIndex + 1 >= total) {
-    return updateDoc(gameRef, { phase: 'ended' });
-  }
-  return updateDoc(gameRef, {
-    phase: 'question',
-    currentQuestionIndex: currentIndex + 1,
-    questionStartTime: serverTimestamp(),
-  });
-};
-
 export const endQuiz = () => updateDoc(gameRef, { phase: 'ended' });
 
+/**
+ * Independent leaderboard toggle — deliberately NOT part of `phase`.
+ * `phase` drives the live voting flow (waiting/question/results/ended);
+ * `leaderboardVisible` is a separate overlay flag admin can flip any time
+ * (typically once every performance is done) without touching or being
+ * gated by that flow. Whatever renders the top-3 (host screen, etc.)
+ * should subscribe to gameState.leaderboardVisible and pull from session
+ * history when it flips true.
+ */
+export const toggleLeaderboard = () =>
+  runTransaction(db, async (tx) => {
+    const snap = await tx.get(gameRef);
+    const current = snap.exists() && !!snap.data().leaderboardVisible;
+    tx.update(gameRef, { leaderboardVisible: !current });
+  });
+
+/**
+ * Reset for the NEXT performance: clears this round's audience + ratings
+ * and drops phase back to 'waiting'. The single reusable question doc is
+ * left alone here — admin edits its teamName/teamType/timer separately
+ * (via updateQuestion) before hitting Start again.
+ */
 export const resetGame = async () => {
   const batch = writeBatch(db);
   batch.update(gameRef, {
@@ -120,6 +125,7 @@ export const resetGame = async () => {
     currentQuestionIndex: 0,
     questionStartTime: null,
     sessionSaved: false,
+    leaderboardVisible: false,
   });
   const [players, answers] = await Promise.all([
     getDocs(playersCol()),
@@ -130,66 +136,28 @@ export const resetGame = async () => {
   await batch.commit();
 };
 
-// ─── Questions ────────────────────────────────────────────────
-// Public question docs hold text/options/timer/order — but NOT correctAnswer.
-// correctAnswer lives in /answerKeys/{questionId}, locked behind rules so
-// players can't fetch all answers via DevTools before answering.
+// ─── Questions (performance entries) ───────────────────────────
 export const subscribeToQuestions = (cb) =>
   onSnapshot(
     query(questionsCol(), orderBy('order', 'asc')),
     (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   );
 
-/** Admin-only: stream every {questionId: correctAnswer} for the editor UI. */
-export const subscribeToAnswerKeys = (cb) =>
-  onSnapshot(answerKeysCol(), (snap) => {
-    const map = {};
-    snap.docs.forEach((d) => { map[d.id] = d.data().correctAnswer; });
-    cb(map);
-  });
-
-/** Public read allowed only after question phase ends (rules-enforced). */
-export const subscribeToAnswerKey = (qId, cb) =>
-  onSnapshot(doc(db, 'answerKeys', qId), (s) =>
-    cb(s.exists() ? s.data() : null)
-  );
-
 export const addQuestion = async (q) => {
-  const { correctAnswer = 0, ...publicData } = q;
   const snap = await getDocs(
     query(questionsCol(), orderBy('order', 'desc'), limit(1))
   );
   const nextOrder = snap.empty ? 0 : snap.docs[0].data().order + 1;
   const newRef = doc(questionsCol());
-  const batch = writeBatch(db);
-  batch.set(newRef, {
-    ...publicData,
-    order: nextOrder,
-    createdAt: serverTimestamp(),
-  });
-  batch.set(doc(db, 'answerKeys', newRef.id), { correctAnswer });
-  await batch.commit();
+  await setDoc(newRef, { ...q, order: nextOrder, createdAt: serverTimestamp() });
   return newRef;
 };
 
-export const updateQuestion = async (id, data) => {
-  const { correctAnswer, ...publicData } = data;
-  const batch = writeBatch(db);
-  if (Object.keys(publicData).length) {
-    batch.update(doc(db, 'questions', id), publicData);
-  }
-  if (correctAnswer !== undefined) {
-    batch.set(doc(db, 'answerKeys', id), { correctAnswer }, { merge: true });
-  }
-  return batch.commit();
-};
+export const updateQuestion = (id, data) =>
+  updateDoc(doc(db, 'questions', id), data);
 
-export const deleteQuestion = async (id) => {
-  const batch = writeBatch(db);
-  batch.delete(doc(db, 'questions', id));
-  batch.delete(doc(db, 'answerKeys', id));
-  return batch.commit();
-};
+export const deleteQuestion = (id) =>
+  deleteDoc(doc(db, 'questions', id));
 
 export const reorderQuestions = async (orderedIds) => {
   const batch = writeBatch(db);
@@ -199,55 +167,20 @@ export const reorderQuestions = async (orderedIds) => {
   return batch.commit();
 };
 
-/**
- * Self-healing migration. Runs on admin login. Handles:
- *   1. Old questions with embedded correctAnswer field — move to /answerKeys, strip field
- *   2. Any question missing an /answerKeys doc — create one with default 0
- * Idempotent. Admin-only.
- */
-export const migrateAnswerKeys = async () => {
-  const [qSnap, kSnap] = await Promise.all([
-    getDocs(questionsCol()),
-    getDocs(answerKeysCol()),
-  ]);
-  const existingKeys = new Set(kSnap.docs.map((d) => d.id));
-  const work = [];
-  for (const d of qSnap.docs) {
-    const data = d.data();
-    const hasEmbedded = 'correctAnswer' in data;
-    const hasKeyDoc   = existingKeys.has(d.id);
-    if (hasEmbedded || !hasKeyDoc) {
-      work.push({
-        id:            d.id,
-        correctAnswer: data.correctAnswer ?? 0,
-        stripField:    hasEmbedded,
-      });
-    }
-  }
-  if (!work.length) return 0;
-  const batch = writeBatch(db);
-  for (const w of work) {
-    batch.set(doc(db, 'answerKeys', w.id), { correctAnswer: w.correctAnswer }, { merge: true });
-    if (w.stripField) {
-      batch.update(doc(db, 'questions', w.id), { correctAnswer: deleteField() });
-    }
-  }
-  await batch.commit();
-  return work.length;
-};
-
-// ─── Players ──────────────────────────────────────────────────
+// ─── Players (audience) ─────────────────────────────────────────
 // Accepts VIT Bhopal institute emails like:
 //   anushka25BCE10978@vitbhopal.ac.in
-//   ANNN21BCE156@vitbhopal.ac.in
-//   anushka.25BCE10978@vitbhopal.ac.in   (optional dot before the reg number)
-// Pattern: name (letters) + optional '.' + 2 digits + 3 letters + 3-6 digits + @vitbhopal.ac.in
-// Digit-group lengths vary across students (seen 3, 4, and 5 digits), so the
-// trailing digit count is a range rather than a fixed width.
-const VIT_BHOPAL_EMAIL_RE = /^[a-z]+\.?[0-9]{2}[a-z]{3}[0-9]{3,6}@vitbhopal\.ac\.in$/i;
-
-// Also accept any personal Gmail address as a fallback join ID.
-const GMAIL_EMAIL_RE = /^[a-z0-9._%+-]+@gmail\.com$/i;
+// Pattern: name (letters) + 2 digits + 3 letters + 3-6 digits + @vitbhopal.ac.in
+// Digit-group lengths vary across students, so the trailing digit count is
+// a range rather than a fixed width. Gmail accepted as a guest fallback.
+//
+// This is the actual anti-ballot-stuffing mechanism: one verified email =
+// one join = one player = one locked rating per performance (locking is
+// enforced in firestore.rules on /answers). A free-text name would let one
+// person vote many times under slight variations — email uniqueness closes
+// that loophole.
+const VIT_BHOPAL_EMAIL_RE = /^[a-z]+[0-9]{2}[a-z]{3}[0-9]{3,6}@vitbhopal\.ac\.in$/i;
+const GMAIL_EMAIL_RE      = /^[a-z0-9._%+-]+@gmail\.com$/i;
 
 export const joinGame = async (rawEmail) => {
   // Server-side email validation (UI also enforces this, but block bypass attempts)
@@ -259,7 +192,6 @@ export const joinGame = async (rawEmail) => {
   // Fetch all players to do a case-insensitive duplicate check (fine for ≤50 players)
   const allSnap   = await getDocs(playersCol());
   const allEmails = allSnap.docs.map((d) => d.data().name.toLowerCase());
-
   if (allEmails.includes(email)) {
     throw new Error('ALREADY_JOINED');
   }
@@ -274,23 +206,17 @@ export const joinGame = async (rawEmail) => {
   return ref.id;
 };
 
-// Aggregates scores live from /answers + /answerKeys.
-// Scores are computed by joining answers with answerKeys.
-// answerKeys collection-level queries fail for unauthenticated users (the
-// per-doc rule can't be satisfied across all docs in a list query). Instead
-// we do individual getDoc calls per questionId — these work fine during
-// results/leaderboard phase per the per-document rule.
+// Aggregates each audience member's score live from /answers — a player's
+// "score" is just the rating(s) they've submitted this round (there's only
+// ever one active question, so normally one rating per player per cycle).
 export const subscribeToPlayers = (cb) => {
   let players = [];
   let answers = [];
-  let keyMap  = {};
 
   const merge = () => {
     const scoreMap = {};
-    answers.forEach(({ playerId, questionId, answer, timeTaken, timer = 15 }) => {
-      if (!(questionId in keyMap)) return;
-      const isCorrect = answer === keyMap[questionId];
-      scoreMap[playerId] = (scoreMap[playerId] || 0) + calcScore(isCorrect, timeTaken, timer);
+    answers.forEach(({ playerId, rating }) => {
+      scoreMap[playerId] = (scoreMap[playerId] || 0) + calcScore(rating);
     });
     cb(
       players
@@ -299,30 +225,13 @@ export const subscribeToPlayers = (cb) => {
     );
   };
 
-  // Fetch any answerKeys not yet in keyMap. Individual getDoc calls work
-  // during results/leaderboard/ended phase; silently no-op during question phase.
-  const refreshKeys = async () => {
-    const missing = [...new Set(answers.map((a) => a.questionId))]
-      .filter((id) => !(id in keyMap));
-    if (!missing.length) { merge(); return; }
-    await Promise.all(
-      missing.map(async (qId) => {
-        try {
-          const snap = await getDoc(doc(db, 'answerKeys', qId));
-          if (snap.exists()) keyMap[qId] = snap.data().correctAnswer;
-        } catch (_) {}
-      })
-    );
-    merge();
-  };
-
   const unsubPlayers = onSnapshot(playersCol(), (snap) => {
     players = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     merge();
   });
   const unsubAnswers = onSnapshot(answersCol(), (snap) => {
     answers = snap.docs.map((d) => d.data());
-    refreshKeys();
+    merge();
   });
 
   return () => { unsubPlayers(); unsubAnswers(); };
@@ -336,38 +245,16 @@ export const getPlayer = (id) =>
     s.exists() ? { id: s.id, ...s.data() } : null
   );
 
-// ─── Answers ──────────────────────────────────────────────────
+// ─── Answers (ratings) ──────────────────────────────────────────
 /**
- * Re-submission safe: subtracts previous score, adds new score.
- *
- * Two-attempt pattern: client doesn't know correctAnswer (it's hidden in
- * /answerKeys, locked behind rules during 'question' phase). So we
- * optimistically submit isCorrect=true with the max-for-time score. If
- * Firestore rules reject (player guessed wrong), we retry with
- * isCorrect=false, score=0. Either way, the server is the source of truth.
+ * One rating per (question, player), LOCKED. Firestore rules deny `update`
+ * on /answers entirely, so a second call here for the same player+question
+ * is rejected server-side — that's the actual lock, not just a UI disable.
  */
-// Blind write — no isCorrect or score fields. The rule forbids both so the
-// rule can never act as an oracle (old two-attempt pattern let DevTools
-// attackers probe the correct answer by watching which write was rejected).
-// Correctness and score are computed at read time from /answerKeys.
-export const submitAnswer = async ({
-  questionId,
-  playerId,
-  answer,
-  teamName,
-  performanceType,
-  timeTaken,
-  timer = 15,
-}) => {
+export const submitAnswer = async ({ questionId, playerId, rating }) => {
   const answerRef = doc(db, 'answers', `${questionId}_${playerId}`);
   await setDoc(answerRef, {
-    questionId,
-    playerId,
-    answer: Number(answer),
-    teamName: teamName || '',
-    performanceType: performanceType || '',
-    timeTaken,
-    timer,
+    questionId, playerId, rating,
     timestamp: serverTimestamp(),
   });
 };
@@ -377,7 +264,7 @@ export const getPlayerAnswer = (questionId, playerId) =>
     s.exists() ? s.data() : null
   );
 
-/** Real-time listener for one player's answer to one question. */
+/** Real-time listener for one player's rating on the current performance. */
 export const subscribeToPlayerAnswer = (questionId, playerId, cb) =>
   onSnapshot(doc(db, 'answers', `${questionId}_${playerId}`), (s) =>
     cb(s.exists() ? s.data() : null)
@@ -389,7 +276,10 @@ export const subscribeToQuestionAnswers = (questionId, cb) =>
     (snap) => cb(snap.docs.map((d) => d.data()))
   );
 
-/** Stream all answers across all questions/performances in real-time */
+/** Real-time listener for every answer doc across the whole DB — used by
+ *  SessionHistory's live tally for the performance currently being voted
+ *  on. Cheap here since /answers is wiped on every resetGame(), so this
+ *  never holds more than one round's worth of ratings at a time. */
 export const subscribeToAllAnswers = (cb) =>
   onSnapshot(answersCol(), (snap) =>
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
@@ -407,115 +297,43 @@ export const getPlayerRank = (players, playerId) => {
 
 // ─── Sessions (leaderboard history) ──────────────────────────
 /**
- * Saves a session snapshot when quiz ends.
+ * Saves one session doc per PERFORMANCE (not per whole show) — called
+ * automatically when a round's voting ends (see AdminPage's phase==='ended'
+ * effect). Captures the team + the rating aggregate for that round.
  * Transaction-guarded: only saves once even with multiple host tabs open.
+ *
+ * ⚠️ Shape changed from the original quiz app: this used to store a ranked
+ * list of quiz players (`players: [{name, score, rank}]`). That no longer
+ * makes sense once audience members are rating a team, not competing
+ * themselves — so this now stores {teamName, teamType, voteCount,
+ * totalRating, averageRating, breakdown}. SessionHistory.jsx has been
+ * updated to match this shape (one saved session = one performance).
  */
-export const saveSession = async (gameState) => {
-  const [playerSnap, answerSnap, keySnap, questionSnap] = await Promise.all([
-    getDocs(playersCol()),
-    getDocs(answersCol()),
-    getDocs(answerKeysCol()),
-    getDocs(query(questionsCol(), orderBy('order', 'asc'))),
-  ]);
-  const keyMap = {};
-  keySnap.docs.forEach((d) => { keyMap[d.id] = d.data().correctAnswer; });
-  const scoreMap = {};
-  const answers = answerSnap.docs.map((d) => d.data());
+export const saveSession = async (gameState, question) => {
+  const answerSnap = await getDocs(answersCol());
+  const ratings = answerSnap.docs
+    .map((d) => d.data().rating)
+    .filter((r) => typeof r === 'number');
 
-  answers.forEach(({ playerId, questionId, answer, timeTaken, timer = 15 }) => {
-    if (!(questionId in keyMap)) return;
-    const isCorrect = answer === keyMap[questionId];
-    scoreMap[playerId] = (scoreMap[playerId] || 0) + calcScore(isCorrect, timeTaken, timer);
-  });
-  const players = playerSnap.docs
-    .map((d) => ({ id: d.id, ...d.data(), score: scoreMap[d.id] || 0 }))
-    .sort((a, b) => b.score - a.score);
-  const ranked = players.map((p) => ({
-    name:  p.name,
-    score: p.score,
-    rank:  players.filter((x) => x.score > p.score).length + 1,
-  }));
-
-  // Tally performance voting results
-  const questions = questionSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const performanceMap = {};
-
-  // Initialize from questions
-  questions.forEach((q, idx) => {
-    performanceMap[q.id] = {
-      id: q.id,
-      order: q.order ?? idx,
-      teamName: q.text || `Performance ${idx + 1}`,
-      performanceType: 'Performance',
-      votes5: 0,
-      votes4: 0,
-      votes3: 0,
-      votes2: 0,
-      votes1: 0,
-      totalVotes: 0,
-      totalRating: 0,
-      averageRating: '0.00',
-    };
-  });
-
-  // Aggregate answers
-  answers.forEach((a) => {
-    const qId = a.questionId;
-    if (!performanceMap[qId]) {
-      performanceMap[qId] = {
-        id: qId,
-        order: 999,
-        teamName: a.teamName || 'Performance',
-        performanceType: a.performanceType || 'Performance',
-        votes5: 0,
-        votes4: 0,
-        votes3: 0,
-        votes2: 0,
-        votes1: 0,
-        totalVotes: 0,
-        totalRating: 0,
-        averageRating: '0.00',
-      };
-    }
-    const item = performanceMap[qId];
-    if (a.teamName) item.teamName = a.teamName;
-    if (a.performanceType) item.performanceType = a.performanceType;
-    const val = Number(a.answer);
-    if (val === 5) item.votes5 += 1;
-    else if (val === 4) item.votes4 += 1;
-    else if (val === 3) item.votes3 += 1;
-    else if (val === 2) item.votes2 += 1;
-    else if (val === 1) item.votes1 += 1;
-  });
-
-  const performances = Object.values(performanceMap).map((p) => {
-    const totalVotes = p.votes5 + p.votes4 + p.votes3 + p.votes2 + p.votes1;
-    const totalRating = (5 * p.votes5) + (4 * p.votes4) + (3 * p.votes3) + (2 * p.votes2) + (1 * p.votes1);
-    const averageRating = totalVotes > 0 ? (totalRating / totalVotes).toFixed(2) : '0.00';
-    return {
-      ...p,
-      totalVotes,
-      totalRating,
-      averageRating,
-    };
-  }).sort((a, b) => {
-    if (b.totalRating !== a.totalRating) return b.totalRating - a.totalRating;
-    return b.totalVotes - a.totalVotes;
-  }).map((p, idx, arr) => ({
-    ...p,
-    rank: arr.filter((x) => x.totalRating > p.totalRating).length + 1,
-  }));
+  const voteCount     = ratings.length;
+  const totalRating    = ratings.reduce((sum, r) => sum + r, 0);
+  const averageRating  = voteCount ? +(totalRating / voteCount).toFixed(2) : 0;
+  const breakdown      = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  ratings.forEach((r) => { if (breakdown[r] !== undefined) breakdown[r] += 1; });
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(gameRef);
     if (!snap.exists() || snap.data().sessionSaved) return;
     const sessionRef = doc(sessionsCol());
     tx.set(sessionRef, {
-      title:        gameState.title ?? 'QuizLive',
-      startedAt:    gameState.startedAt ?? null,
-      endedAt:      serverTimestamp(),
-      players:      ranked,
-      performances: performances,
+      teamName:      question?.teamName ?? 'Unknown team',
+      teamType:      question?.teamType ?? '',
+      startedAt:     gameState.startedAt ?? null,
+      endedAt:       serverTimestamp(),
+      voteCount,
+      totalRating,
+      averageRating,
+      breakdown,
     });
     tx.update(gameRef, { sessionSaved: true });
   });
