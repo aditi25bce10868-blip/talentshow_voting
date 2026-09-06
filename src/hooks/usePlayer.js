@@ -7,10 +7,11 @@ const PLAYER_REG_KEY = 'ql_player_reg';
 // Accepts VIT Bhopal institute emails like:
 //   anushka25BCE10978@vitbhopal.ac.in
 //   ANNN21BCE156@vitbhopal.ac.in
-// Pattern: name (letters) + 2 digits + 3 letters + 3-6 digits + @vitbhopal.ac.in
+//   anushka.25BCE10978@vitbhopal.ac.in   (optional dot before the reg number)
+// Pattern: name (letters) + optional '.' + 2 digits + 3 letters + 3-6 digits + @vitbhopal.ac.in
 // Digit-group lengths vary across students (seen 3, 4, and 5 digits), so the
 // trailing digit count is a range rather than a fixed width.
-const VIT_BHOPAL_EMAIL_RE = /^[a-z]+[0-9]{2}[a-z]{3}[0-9]{3,6}@vitbhopal\.ac\.in$/i;
+const VIT_BHOPAL_EMAIL_RE = /^[a-z]+\.?[0-9]{2}[a-z]{3}[0-9]{3,6}@vitbhopal\.ac\.in$/i;
 
 // Also accept any personal Gmail address as a fallback join ID.
 const GMAIL_EMAIL_RE = /^[a-z0-9._%+-]+@gmail\.com$/i;
