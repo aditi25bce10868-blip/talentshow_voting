@@ -1,32 +1,23 @@
-import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { subscribeToPlayers } from '../../firebase/db';
+import useTopSessions from '../../hooks/useTopSessions';
 
-export default function PlayerLeaderboard({ playerId, playerName }) {
-  const [players, setPlayers] = useState([]);
-
-  useEffect(() => {
-    const unsub = subscribeToPlayers(setPlayers);
-    return unsub;
-  }, []);
-
-  const sorted = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-  const top3   = [sorted[0], sorted[1], sorted[2]]; // [first, second, third]
+export default function PlayerLeaderboard() {
+  const { top3 } = useTopSessions();
 
   // Podium display order: 2nd (left) · 1st (center, tallest) · 3rd (right)
   const podium = [
     {
-      player: top3[1], rank: 2, height: 'h-44 sm:h-64', badgeSize: 'w-8 h-8 text-[11px] sm:w-11 sm:h-11 sm:text-sm',
+      session: top3[1], rank: 2, height: 'h-44 sm:h-64', badgeSize: 'w-8 h-8 text-[11px] sm:w-11 sm:h-11 sm:text-sm',
       cardBg: 'bg-slate-300', badgeBg: 'bg-white', badgeText: 'text-slate-500',
       avatarBg: 'bg-white/60', avatarColor: 'text-sky-500',
     },
     {
-      player: top3[0], rank: 1, height: 'h-56 sm:h-80', badgeSize: 'w-9 h-9 text-xs sm:w-12 sm:h-12 sm:text-base',
+      session: top3[0], rank: 1, height: 'h-56 sm:h-80', badgeSize: 'w-9 h-9 text-xs sm:w-12 sm:h-12 sm:text-base',
       cardBg: 'bg-amber-400', badgeBg: 'bg-white', badgeText: 'text-amber-500',
       avatarBg: 'bg-white/60', avatarColor: 'text-sky-500',
     },
     {
-      player: top3[2], rank: 3, height: 'h-40 sm:h-56', badgeSize: 'w-8 h-8 text-[11px] sm:w-11 sm:h-11 sm:text-sm',
+      session: top3[2], rank: 3, height: 'h-40 sm:h-56', badgeSize: 'w-8 h-8 text-[11px] sm:w-11 sm:h-11 sm:text-sm',
       cardBg: 'bg-orange-500', badgeBg: 'bg-white', badgeText: 'text-orange-600',
       avatarBg: 'bg-white/60', avatarColor: 'text-sky-500',
     },
@@ -60,7 +51,7 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
     { emoji: '✦', top: '58%', left: '6%', size: 14, delay: 1.6 },
   ];
 
-  const Card = ({ player, rank, height, badgeSize, cardBg, badgeBg, badgeText, avatarBg, avatarColor }) => (
+  const Card = ({ session, rank, height, badgeSize, cardBg, badgeBg, badgeText, avatarBg, avatarColor }) => (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
@@ -93,15 +84,17 @@ export default function PlayerLeaderboard({ playerId, playerName }) {
         {rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}
       </div>
 
-      {/* Name */}
+      {/* Team name */}
       <p className="relative z-10 font-black text-slate-900 text-[11px] sm:text-base truncate max-w-full">
-        {player ? player.name : '—'}
+        {session ? session.teamName : '—'}
       </p>
 
-      {/* Score */}
-      <p className="relative z-10 text-slate-800/80 font-semibold text-[10px] sm:text-sm mt-0.5 mb-1.5 sm:mb-2">
-        {player ? `${player.score ?? 0} pts` : '—'}
-      </p>
+      {/* Team type */}
+      {session?.teamType && (
+        <p className="relative z-10 text-slate-800/60 font-semibold text-[9px] sm:text-xs uppercase tracking-wide truncate max-w-full mb-1.5 sm:mb-2">
+          {session.teamType}
+        </p>
+      )}
     </motion.div>
   );
 
