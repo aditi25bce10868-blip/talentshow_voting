@@ -73,10 +73,7 @@ export default function HostPage() {
       <AnimatePresence mode="wait">
         {gameState?.leaderboardVisible ? (
           <motion.div key="leaderboard" {...pageFade} className="min-h-screen">
-            <LeaderboardPhase
-              gameState={gameState}
-              questions={questions}
-            />
+            <LeaderboardPhase />
           </motion.div>
         ) : (
           <>
