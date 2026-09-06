@@ -217,7 +217,3 @@ We build practical and impactful digital solutions for **campus events, student 
 Made with ❤️ and code by the **BashCraft Web Development Team**
 
 </div>
-
-
-
-ating experiences. Making events smarter.
