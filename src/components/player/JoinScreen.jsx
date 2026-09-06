@@ -37,7 +37,7 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
   ];
 
   return (
-    <div className="fixed inset-0 overflow-y-auto flex flex-col items-center justify-center px-5 py-8 bg-black">
+    <div className="fixed inset-0 overflow-y-auto flex flex-col items-center justify-center px-4 py-6 bg-black">
       {/* Nebula / ember background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden bg-black">
         {/* base vignette */}
@@ -114,7 +114,7 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
         className="relative z-10 w-full max-w-sm"
       >
         {/* Header with TALENT SHOW */}
-        <div className="text-center mb-4">
+        <div className="text-center mb-3">
           {/* Logo with bounce animation */}
           <motion.div
             animate={{
@@ -126,16 +126,16 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
               repeatDelay: 1,
               ease: 'easeInOut',
             }}
-            className="mb-3"
+            className="mb-2"
           >
             <img
               src="/logo-bsg.png"
               alt="BSG Logo"
-              className="w-20 h-20 mx-auto rounded-2xl shadow-lg shadow-orange-900/30 object-contain"
+              className="w-14 h-14 sm:w-20 sm:h-20 mx-auto rounded-2xl shadow-lg shadow-orange-900/30 object-contain"
             />
           </motion.div>
 
-          {/* TALENT SHOW - White with elegant glow */}
+          {/* TALENT SHOW - White with elegant glow, forced onto one line and scaled to fit narrow screens */}
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -144,20 +144,25 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
               type: 'spring',
               stiffness: 200,
             }}
+            className="px-1"
           >
-            <h1 className="text-5xl md:text-6xl font-black tracking-wider uppercase relative">
+            <h1
+              className="whitespace-nowrap uppercase relative font-black
+                         text-[clamp(1.5rem,7vw,3.75rem)]
+                         tracking-wide sm:tracking-wider leading-none"
+            >
               <span className="relative inline-block text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.15)]">
-                TALENT SHOW
+                {gameTitle}
               </span>
 
               {/* Subtle white glow layers */}
-              <span className="absolute inset-0 text-white/20 blur-xl">TALENT SHOW</span>
+              <span className="absolute inset-0 text-white/20 blur-xl">{gameTitle}</span>
             </h1>
           </motion.div>
 
           {/* Decorative line with pulse animation */}
           <motion.div
-            className="relative w-32 h-0.5 mx-auto mt-3"
+            className="relative w-24 sm:w-32 h-0.5 mx-auto mt-3"
             animate={{
               scaleX: [0.8, 1, 0.8],
               opacity: [0.5, 1, 0.5],
@@ -214,15 +219,15 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
               const parent = e.target.parentElement;
               const fallback = document.createElement('div');
               fallback.className =
-                'w-full rounded-xl bg-gradient-to-br from-orange-900/30 to-orange-600/10 p-8 aspect-[4/3] flex flex-col items-center justify-center text-center';
+                'w-full rounded-xl bg-gradient-to-br from-orange-900/30 to-orange-600/10 p-6 sm:p-8 aspect-[4/3] flex flex-col items-center justify-center text-center';
               fallback.innerHTML = `
-                <div class="w-20 h-20 rounded-full bg-orange-500/20 flex items-center justify-center mb-3">
-                  <svg class="w-10 h-10 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-orange-500/20 flex items-center justify-center mb-3">
+                  <svg class="w-8 h-8 sm:w-10 sm:h-10 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                   </svg>
                 </div>
-                <h3 class="text-orange-400 font-bold text-xl">SOCIAL LOOPERS</h3>
-                <p class="text-white/60 text-sm mt-1">VIT Bhopal • Talent Show 2026</p>
+                <h3 class="text-orange-400 font-bold text-lg sm:text-xl">SOCIAL LOOPERS</h3>
+                <p class="text-white/60 text-xs sm:text-sm mt-1">VIT Bhopal • Talent Show 2026</p>
                 <div class="mt-3 flex gap-2">
                   <span class="px-3 py-1 bg-orange-500/20 rounded-full text-orange-300 text-xs font-semibold">Live</span>
                   <span class="px-3 py-1 bg-orange-500/20 rounded-full text-orange-300 text-xs font-semibold">Voting</span>
@@ -239,11 +244,11 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
         >
-          <p className="text-center text-white/70 text-sm mt-4 font-medium">
+          <p className="text-center text-white/70 text-xs sm:text-sm mt-3 sm:mt-4 font-medium">
             Enter your registered college email id to join
           </p>
 
-          <form onSubmit={submit} className="mt-4 rounded-2xl p-5 space-y-4 bg-white/[0.03] border border-orange-500/20">
+          <form onSubmit={submit} className="mt-3 sm:mt-4 rounded-2xl p-4 sm:p-5 space-y-3 sm:space-y-4 bg-white/[0.03] border border-orange-500/20">
             <div>
               <label className="block text-xs font-semibold text-orange-400 mb-2 uppercase tracking-wider">
                 REGISTERED EMAIL ID
@@ -268,7 +273,7 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
                   maxLength={60}
                   autoFocus
                   className="w-full bg-black/40 border border-orange-500/30 rounded-xl pl-12 pr-4 py-3 text-white
-                             placeholder-white/30 text-base font-medium focus:outline-none
+                             placeholder-white/30 text-sm sm:text-base font-medium focus:outline-none
                              focus:border-orange-400 focus:bg-black/60 transition-all duration-300"
                 />
               </div>
@@ -306,7 +311,7 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
               disabled={joining || !valid}
               whileTap={{ scale: 0.95 }}
               whileHover={{ scale: 1.02 }}
-              className="w-full py-4 rounded-xl font-black text-lg tracking-wide text-black uppercase
+              className="w-full py-3.5 sm:py-4 rounded-xl font-black text-base sm:text-lg tracking-wide text-black uppercase
                          bg-gradient-to-r from-orange-500 to-orange-400
                          disabled:opacity-40 disabled:cursor-not-allowed
                          hover:from-orange-400 hover:to-orange-300
@@ -339,7 +344,7 @@ export default function JoinScreen({ onJoin, joining, error, suggested, onClearS
 
         {/* Footer with fade-in animation */}
         <motion.div
-          className="mt-5 text-center"
+          className="mt-4 sm:mt-5 text-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6 }}
