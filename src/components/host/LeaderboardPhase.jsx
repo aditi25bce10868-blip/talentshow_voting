@@ -1,11 +1,6 @@
-import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Particles from '../shared/Particles';
-import { subscribeToPlayers } from '../../firebase/db';
-
-// Tie-aware rank (players sorted desc by score already)
-const getRank = (players, score) =>
-  players.filter((p) => p.score > score).length + 1;
+import useTopSessions from '../../hooks/useTopSessions';
 
 const MEDAL_BY_RANK = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
@@ -42,8 +37,8 @@ const PODIUM_STYLES = [
   },
 ];
 
-function PodiumSlot({ player, rank, style, delay }) {
-  if (!player) return <div className="w-40" />;
+function PodiumSlot({ session, rank, style, delay }) {
+  if (!session) return <div className="w-40" />;
 
   return (
     <motion.div
@@ -94,37 +89,27 @@ function PodiumSlot({ player, rank, style, delay }) {
       >
         <span className="text-2xl mb-1">{MEDAL_BY_RANK[rank] ?? ''}</span>
         <p className={`${style.textColor} font-black ${style.textSize} text-center px-2 w-full truncate`}>
-          {player.name}
+          {session.teamName}
         </p>
-        <p className={`${style.subColor} text-xs font-bold mt-0.5`}>{player.score} pts</p>
+        {session.teamType && (
+          <p className={`${style.subColor} text-[10px] font-semibold uppercase tracking-wide truncate max-w-full px-2`}>
+            {session.teamType}
+          </p>
+        )}
       </div>
     </motion.div>
   );
 }
 
-export default function LeaderboardPhase({ gameState, questions }) {
-  const [players, setPlayers] = useState([]);
-
-  useEffect(() => {
-    const unsub = subscribeToPlayers(setPlayers);
-    return unsub;
-  }, []);
-
-  const top50 = players.slice(0, 50);
-  const isLast = (gameState?.currentQuestionIndex ?? 0) >= (questions.length - 1);
-
-  // Attach display rank to each player (tie-aware)
-  const ranked = top50.map((p) => ({
-    ...p,
-    displayRank: getRank(players, p.score),
-  }));
+export default function LeaderboardPhase() {
+  const { sessions, top3 } = useTopSessions();
 
   return (
     <div className="min-h-screen w-full flex flex-col overflow-hidden relative
                     bg-gradient-to-b from-[#0f0a1e] via-[#160b2e] to-[#0a1628]">
 
       {/* Falling confetti */}
-      {top50.length > 0 && <Particles count={28} />}
+      {top3.length > 0 && <Particles count={28} />}
 
       {/* Background glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -147,26 +132,24 @@ export default function LeaderboardPhase({ gameState, questions }) {
           <h1 className="text-6xl font-black gradient-text tracking-tight leading-none">
             🏆 Leaderboard
           </h1>
-          {isLast && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="text-brand-300 text-xl mt-2 font-semibold"
-            >
-              Final Results!
-            </motion.p>
-          )}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="text-brand-300 text-xl mt-2 font-semibold"
+          >
+            Top Performances — by Average Rating
+          </motion.p>
         </motion.div>
 
-        {/* Podium — top 3 */}
-        {ranked.length > 0 && (
+        {/* Podium — top 3 teams */}
+        {top3.length > 0 && (
           <div className="flex justify-center items-end gap-4 relative">
             {PODIUM_ORDER.map((rankIdx, vi) => (
               <PodiumSlot
                 key={rankIdx}
-                player={ranked[rankIdx]}
-                rank={ranked[rankIdx]?.displayRank}
+                session={top3[rankIdx]}
+                rank={top3[rankIdx]?.rank}
                 style={PODIUM_STYLES[vi]}
                 delay={0.1 + vi * 0.15}
               />
@@ -174,13 +157,13 @@ export default function LeaderboardPhase({ gameState, questions }) {
           </div>
         )}
 
-        {/* Ranks 4+ */}
-        {ranked.length > 3 && (
+        {/* Remaining teams, ranks 4+ */}
+        {sessions.length > 3 && (
           <div className="flex flex-col gap-2 max-w-2xl mx-auto w-full">
             <AnimatePresence>
-              {ranked.slice(3).map((p, i) => (
+              {sessions.slice(3).map((s, i) => (
                 <motion.div
-                  key={p.id}
+                  key={s.id}
                   layout
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -188,26 +171,27 @@ export default function LeaderboardPhase({ gameState, questions }) {
                   className="flex items-center gap-3 rounded-xl px-4 py-3
                              bg-white/5 border border-white/10 hover:bg-white/8"
                 >
-                  {/* Tie-aware rank (matches player screen) */}
                   <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center
                                   justify-center shrink-0 border border-white/10">
-                    <span className="text-white/60 font-black text-sm">
-                      {p.displayRank}
-                    </span>
+                    <span className="text-white/60 font-black text-sm">{s.rank}</span>
                   </div>
 
-                  {/* Avatar */}
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500
                                   to-purple-600 flex items-center justify-center text-sm
                                   font-black text-white shrink-0 shadow-md">
-                    {p.name.charAt(0).toUpperCase()}
+                    {s.teamName?.charAt(0).toUpperCase() ?? '?'}
                   </div>
 
-                  <span className="flex-1 text-white font-semibold truncate">{p.name}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold truncate">{s.teamName}</p>
+                    {s.teamType && <p className="text-white/40 text-xs truncate">{s.teamType}</p>}
+                  </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-brand-300 font-black tabular-nums">{p.score}</span>
-                    <span className="text-white/30 text-xs">pts</span>
+                    <span className="text-brand-300 font-black tabular-nums">
+                      {(s.averageRating ?? 0).toFixed(2)}
+                    </span>
+                    <span className="text-white/30 text-xs">★ avg</span>
                   </div>
                 </motion.div>
               ))}
@@ -215,8 +199,8 @@ export default function LeaderboardPhase({ gameState, questions }) {
           </div>
         )}
 
-        {players.length === 0 && (
-          <p className="text-center text-white/30 text-lg mt-4">No players yet</p>
+        {sessions.length === 0 && (
+          <p className="text-center text-white/30 text-lg mt-4">No performances scored yet</p>
         )}
 
         <p className="text-center text-white/30 text-sm font-medium mt-4">deadtechguy.fun</p>
